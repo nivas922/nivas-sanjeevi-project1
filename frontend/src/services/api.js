@@ -1,4 +1,4 @@
-﻿import { storageService } from "./storageService";
+import { storageService } from "./storageService";
 import { MULTILINGUAL_SUMMARIES, SUPPORTED_LANGUAGES, DEPARTMENTS } from "../data/translations";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
@@ -29,14 +29,16 @@ export const api = {
     return { status: "success", user, token: "token_" + Date.now() };
   },
 
-  async loginWithGoogle() {
-    await sleep(500);
+  async loginWithGoogle(accountData = {}) {
+    await sleep(300);
     const randomId = Math.floor(Math.random() * 899) + 100;
+    const name = accountData.name || "NIVAS M";
+    const email = accountData.email || "nivasm.it24@bitsathy.ac.in";
     const googleUser = storageService.initNewUser({
-      name: "Google Student",
-      email: `student.${randomId}@gmail.com`,
-      department: DEPARTMENTS[0],
-      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=google_${randomId}`
+      name: name,
+      email: email,
+      department: accountData.department || DEPARTMENTS[0],
+      avatar: accountData.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=google_${encodeURIComponent(name)}`
     });
     return { status: "success", user: googleUser, token: "google_token_" + Date.now() };
   },

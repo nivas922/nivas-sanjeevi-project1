@@ -1,4 +1,4 @@
-﻿import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { storageService } from "../services/storageService";
 import { api } from "../services/api";
 
@@ -31,10 +31,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (accountData = {}) => {
     setLoading(true);
     try {
-      const res = await api.loginWithGoogle();
+      const res = await api.loginWithGoogle(accountData);
       setUser(res.user);
       setToken(res.token);
       return res.user;
