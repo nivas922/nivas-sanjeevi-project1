@@ -9,7 +9,10 @@ import {
   Loader2,
   Sparkles,
   Layers,
-  BookOpen
+  BookOpen,
+  PlusCircle,
+  Sliders,
+  CheckCircle2
 } from "lucide-react";
 import { useLearning } from "../context/LearningContext";
 import { QuizCard } from "../components/quiz/QuizCard";
@@ -18,6 +21,7 @@ import { Button } from "../components/common/Button";
 import { useToast } from "../context/ToastContext";
 import { api } from "../services/api";
 import { EmptyState } from "../components/common/EmptyState";
+import { DEPARTMENTS } from "../data/translations";
 
 export const AIQuiz = () => {
   const [searchParams] = useSearchParams();
@@ -32,6 +36,15 @@ export const AIQuiz = () => {
   const [timeLeft, setTimeLeft] = useState(600);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Custom Quiz Generator Panel states
+  const [showConfigPanel, setShowConfigPanel] = useState(false);
+  const [customSubject, setCustomSubject] = useState("Computer Science & Engineering");
+  const [customTopic, setCustomTopic] = useState("Core Concepts & System Architecture");
+  const [customDifficulty, setCustomDifficulty] = useState("Intermediate");
+  const [customQuestionInput, setCustomQuestionInput] = useState("5");
+  const [customNumberValue, setCustomNumberValue] = useState(7);
+  const [isGeneratingCustom, setIsGeneratingCustom] = useState(false);
 
   useEffect(() => {
     const loadQuiz = async () => {
@@ -83,6 +96,42 @@ export const AIQuiz = () => {
     return () => clearInterval(interval);
   }, [timeLeft, quiz]);
 
+  const getEffectiveCustomCount = () => {
+    if (customQuestionInput === "custom") {
+      const parsed = parseInt(customNumberValue, 10);
+      return isNaN(parsed) || parsed < 1 ? 5 : Math.min(parsed, 30);
+    }
+    return parseInt(customQuestionInput, 10) || 5;
+  };
+
+  const handleGenerateCustomQuiz = async (e) => {
+    e.preventDefault();
+    setIsGeneratingCustom(true);
+    const count = getEffectiveCustomCount();
+
+    try {
+      const newQuiz = await api.generateQuiz({
+        topic: customTopic || "Academic Fundamentals",
+        subject: customSubject || "Engineering",
+        difficulty: customDifficulty,
+        questionCount: count
+      });
+
+      refreshLearningData();
+      setQuiz(newQuiz);
+      setCurrentIndex(0);
+      setSelectedAnswers({});
+      setTimeLeft(newQuiz.timeLimitMinutes * 60);
+      setShowConfigPanel(false);
+      showSuccess(`Generated customized quiz with ${count} questions!`);
+      navigate(`/quiz?id=${newQuiz.id}`);
+    } catch (err) {
+      showWarning("Failed to generate custom quiz.");
+    } finally {
+      setIsGeneratingCustom(false);
+    }
+  };
+
   const handleSubmitQuiz = async () => {
     if (!quiz) return;
     const totalQuestions = quiz.questions.length;
@@ -123,23 +172,12 @@ export const AIQuiz = () => {
     );
   }
 
-  if (!quiz || !quiz.questions || quiz.questions.length === 0) {
-    return (
-      <EmptyState
-        icon={HelpCircle}
-        title="No quiz available"
-        description="Upload a textbook or open a summary to generate personalized quizzes."
-        actionText="Upload Textbook"
-        onAction={() => navigate("/upload")}
-      />
-    );
-  }
-
-  const currentQuestion = quiz.questions[currentIndex];
-  const totalQuestions = quiz.questions.length;
+  const currentQuestion = quiz?.questions && quiz.questions[currentIndex];
+  const totalQuestions = quiz?.questions ? quiz.questions.length : 0;
   const answeredCount = Object.keys(selectedAnswers).length;
 
   const handleSelectOption = (optionIndex) => {
+    if (!currentQuestion) return;
     setSelectedAnswers((prev) => ({
       ...prev,
       [currentQuestion.id]: optionIndex
@@ -160,90 +198,201 @@ export const AIQuiz = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300 pb-12">
-      {/* Top Header Card */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-soft-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-brand-600 bg-brand-50 px-2.5 py-0.5 rounded-lg">
-              {quiz.subject}
-            </span>
-            <span className="text-xs font-semibold text-slate-400">
-              Difficulty: {quiz.difficulty} • {totalQuestions} Questions
-            </span>
+      {/* Top Action & Custom Quiz Generator Bar */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-soft-sm space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-brand-600 bg-brand-50 px-2.5 py-0.5 rounded-lg">
+                {quiz?.subject || "Adaptive Quiz"}
+              </span>
+              <span className="text-xs font-semibold text-slate-400">
+                Difficulty: {quiz?.difficulty || "Intermediate"} • {totalQuestions} Questions
+              </span>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
+              {quiz?.title || "AI Knowledge Quiz"}
+            </h1>
           </div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-            {quiz.title}
-          </h1>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              icon={Sliders}
+              onClick={() => setShowConfigPanel(!showConfigPanel)}
+            >
+              {showConfigPanel ? "Close Generator" : "⚙️ Custom Quiz Options"}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              icon={Send}
+              loading={isSubmitting}
+              onClick={handleSubmitQuiz}
+              className="shadow-soft-sm"
+            >
+              Submit Quiz
+            </Button>
+          </div>
         </div>
 
-        <Button
-          variant="danger"
-          size="sm"
-          icon={Send}
-          loading={isSubmitting}
-          onClick={handleSubmitQuiz}
-          className="shadow-soft-sm"
-        >
-          Submit Quiz
-        </Button>
-      </div>
+        {/* Expandable Custom Quiz Config Panel */}
+        {showConfigPanel && (
+          <form onSubmit={handleGenerateCustomQuiz} className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4 animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-brand-600" />
+                <span>Configure Custom Number of Quiz Questions</span>
+              </h4>
+              <span className="text-[11px] text-slate-500 font-medium">Type any question count from 1 to 30</span>
+            </div>
 
-      {/* Progress Bar & Question Selector */}
-      <QuizProgress
-        currentIndex={currentIndex}
-        totalQuestions={totalQuestions}
-        answeredCount={answeredCount}
-        timeLeftSeconds={timeLeft}
-        onJumpToQuestion={(idx) => setCurrentIndex(idx)}
-      />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 block mb-1">
+                  Topic / Subject
+                </label>
+                <input
+                  type="text"
+                  value={customTopic}
+                  onChange={(e) => setCustomTopic(e.target.value)}
+                  placeholder="e.g. TCP/IP Handshake, OOP"
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
 
-      {/* Current Question Card */}
-      <QuizCard
-        question={currentQuestion}
-        questionNumber={currentIndex + 1}
-        selectedOptionIndex={selectedAnswers[currentQuestion.id]}
-        onSelectOption={handleSelectOption}
-      />
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 block mb-1">
+                  Difficulty Level
+                </label>
+                <select
+                  value={customDifficulty}
+                  onChange={(e) => setCustomDifficulty(e.target.value)}
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="Beginner">Beginner (Foundational)</option>
+                  <option value="Intermediate">Intermediate (Standard)</option>
+                  <option value="Advanced">Advanced (Challenge)</option>
+                </select>
+              </div>
 
-      {/* Navigation Buttons */}
-      <div className="flex items-center justify-between gap-4 pt-4">
-        <Button
-          variant="outline"
-          size="md"
-          icon={ArrowLeft}
-          disabled={currentIndex === 0}
-          onClick={handlePrevious}
-        >
-          Previous
-        </Button>
+              {/* Number of Questions Selector + Custom Input */}
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 block mb-1">
+                  Number of Questions
+                </label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={customQuestionInput}
+                    onChange={(e) => setCustomQuestionInput(e.target.value)}
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  >
+                    <option value="5">5 Questions</option>
+                    <option value="10">10 Questions</option>
+                    <option value="15">15 Questions</option>
+                    <option value="20">20 Questions</option>
+                    <option value="custom">✍️ Custom Number...</option>
+                  </select>
 
-        <div className="text-xs font-bold text-slate-400">
-          {answeredCount} of {totalQuestions} answered
-        </div>
+                  {customQuestionInput === "custom" && (
+                    <input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={customNumberValue}
+                      onChange={(e) => setCustomNumberValue(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      placeholder="Count"
+                      className="w-20 p-2 bg-white border-2 border-brand-500 text-slate-900 font-black text-xs rounded-xl focus:outline-none"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
 
-        {currentIndex < totalQuestions - 1 ? (
-          <Button
-            variant="primary"
-            size="md"
-            icon={ArrowRight}
-            iconPosition="right"
-            onClick={handleNext}
-          >
-            Next Question
-          </Button>
-        ) : (
-          <Button
-            variant="success"
-            size="md"
-            icon={Send}
-            iconPosition="right"
-            loading={isSubmitting}
-            onClick={handleSubmitQuiz}
-          >
-            Submit Quiz
-          </Button>
+            <div className="flex justify-end pt-2">
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                icon={Sparkles}
+                loading={isGeneratingCustom}
+              >
+                Generate & Start {getEffectiveCustomCount()}-Question Quiz
+              </Button>
+            </div>
+          </form>
         )}
       </div>
+
+      {quiz && currentQuestion ? (
+        <>
+          {/* Progress Bar & Question Selector */}
+          <QuizProgress
+            currentIndex={currentIndex}
+            totalQuestions={totalQuestions}
+            answeredCount={answeredCount}
+            timeLeftSeconds={timeLeft}
+            onJumpToQuestion={(idx) => setCurrentIndex(idx)}
+          />
+
+          {/* Current Question Card */}
+          <QuizCard
+            question={currentQuestion}
+            questionNumber={currentIndex + 1}
+            selectedOptionIndex={selectedAnswers[currentQuestion.id]}
+            onSelectOption={handleSelectOption}
+          />
+
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between gap-4 pt-4">
+            <Button
+              variant="outline"
+              size="md"
+              icon={ArrowLeft}
+              disabled={currentIndex === 0}
+              onClick={handlePrevious}
+            >
+              Previous
+            </Button>
+
+            <div className="text-xs font-bold text-slate-400">
+              {answeredCount} of {totalQuestions} answered
+            </div>
+
+            {currentIndex < totalQuestions - 1 ? (
+              <Button
+                variant="primary"
+                size="md"
+                icon={ArrowRight}
+                iconPosition="right"
+                onClick={handleNext}
+              >
+                Next Question
+              </Button>
+            ) : (
+              <Button
+                variant="success"
+                size="md"
+                icon={Send}
+                iconPosition="right"
+                loading={isSubmitting}
+                onClick={handleSubmitQuiz}
+              >
+                Submit Quiz
+              </Button>
+            )}
+          </div>
+        </>
+      ) : (
+        <EmptyState
+          icon={HelpCircle}
+          title="No questions generated"
+          description="Click 'Custom Quiz Options' above to generate questions on any topic."
+          actionText="Open Quiz Options"
+          onAction={() => setShowConfigPanel(true)}
+        />
+      )}
     </div>
   );
 };

@@ -5,15 +5,20 @@ import {
   Sparkles,
   RotateCcw,
   BookOpen,
-  FileText
+  FileText,
+  ArrowRight,
+  Globe,
+  Loader2
 } from "lucide-react";
 import { TextToSpeech } from "../components/tts/TextToSpeech";
-import { SUPPORTED_LANGUAGES } from "../data/translations";
+import { SUPPORTED_LANGUAGES, MULTILINGUAL_SUMMARIES } from "../data/translations";
+import { translatorService } from "../services/translatorService";
 import { useToast } from "../context/ToastContext";
 import { useLearning } from "../context/LearningContext";
+import { Button } from "../components/common/Button";
 
 export const TextToSpeechPage = () => {
-  const { showSuccess } = useToast();
+  const { showSuccess, showInfo } = useToast();
   const { activeLanguage } = useLearning();
 
   const samplePassages = [
@@ -54,22 +59,32 @@ export const TextToSpeechPage = () => {
     }
   ];
 
-  const [selectedLang, setSelectedLang] = useState(activeLanguage || "en");
-  const [text, setText] = useState(samplePassages.find(p => p.lang === selectedLang)?.text || samplePassages[0].text);
+  const [selectedLang, setSelectedLang] = useState(activeLanguage || "ta");
+  const [text, setText] = useState(samplePassages.find(p => p.lang === (activeLanguage || "ta"))?.text || samplePassages[1].text);
+  const [isTranslating, setIsTranslating] = useState(false);
 
   const handleSelectSample = (sample) => {
     setText(sample.text);
     setSelectedLang(sample.lang);
-    showSuccess(`Loaded ${SUPPORTED_LANGUAGES.find(l => l.code === sample.lang)?.name || sample.lang} sample passage!`);
+    showSuccess(`Loaded ${SUPPORTED_LANGUAGES.find(l => l.code === sample.lang)?.name || sample.lang} sample text!`);
   };
 
-  const handleLanguageChange = (code) => {
+  const handleLanguageConvert = (code) => {
     setSelectedLang(code);
-    const matchingSample = samplePassages.find(p => p.lang === code);
-    if (matchingSample) {
-      setText(matchingSample.text);
-    }
-    showSuccess(`Speech language switched to ${SUPPORTED_LANGUAGES.find(l => l.code === code)?.name}!`);
+    setIsTranslating(true);
+    setTimeout(() => {
+      // If there's an exact pre-computed sample for this language, load it, otherwise convert using translatorService
+      const matchingSample = samplePassages.find(p => p.lang === code);
+      if (matchingSample) {
+        setText(matchingSample.text);
+      } else {
+        const converted = translatorService.translateText(text, code);
+        setText(converted);
+      }
+      setIsTranslating(false);
+      const langName = SUPPORTED_LANGUAGES.find(l => l.code === code)?.name || code;
+      showSuccess(`Text converted into ${langName}! Ready to read aloud.`);
+    }, 300);
   };
 
   const currentLangObj = SUPPORTED_LANGUAGES.find(l => l.code === selectedLang) || SUPPORTED_LANGUAGES[0];
@@ -80,29 +95,36 @@ export const TextToSpeechPage = () => {
       <div className="text-center max-w-2xl mx-auto">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-50 text-brand-700 text-xs font-bold mb-3 border border-brand-200">
           <Volume2 className="w-3.5 h-3.5" />
-          <span>Multilingual Speech Studio</span>
+          <span>Live Translation & Speech Studio</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-          Text to Speech Audio Studio
+          Text to Speech & Multilingual Conversion
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Listen to textbook chapters, AI summaries, and study notes in natural Indian languages with adjustable speed.
+          Type or paste text in any language, convert it instantly to Indian languages, and listen to natural audio speech synthesis.
         </p>
       </div>
 
-      {/* Language Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-soft-sm space-y-2">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
-          Select Speech Language:
-        </span>
+      {/* Language Conversion Selector Bar */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-soft-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+            <Globe className="w-4 h-4 text-brand-600" />
+            <span>Select Target Language to Convert & Read Aloud:</span>
+          </span>
+          <span className="text-xs font-extrabold text-brand-600 bg-brand-50 px-2.5 py-0.5 rounded-lg border border-brand-200">
+            Active: {currentLangObj.flag} {currentLangObj.name} ({currentLangObj.native})
+          </span>
+        </div>
+
         <div className="flex flex-wrap gap-2">
           {SUPPORTED_LANGUAGES.map((lang) => (
             <button
               key={lang.code}
-              onClick={() => handleLanguageChange(lang.code)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+              onClick={() => handleLanguageConvert(lang.code)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
                 selectedLang === lang.code
-                  ? "bg-brand-600 text-white shadow-soft-sm scale-105"
+                  ? "bg-brand-600 text-white shadow-soft-md scale-105"
                   : "bg-slate-100 text-slate-700 hover:bg-slate-200"
               }`}
             >
@@ -113,12 +135,12 @@ export const TextToSpeechPage = () => {
         </div>
       </div>
 
-      {/* Preset Passages Grid */}
+      {/* Preset Academic Passages */}
       <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-soft-sm space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-brand-600" />
-            Educational Presets in Indian Languages
+            Quick Presets (Click to load sample in that language)
           </span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -141,35 +163,50 @@ export const TextToSpeechPage = () => {
         </div>
       </div>
 
-      {/* Textarea Input */}
+      {/* Textarea Input & Live Language Conversion */}
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-soft-sm space-y-4">
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-            <span>Text to Read Aloud:</span>
-            <span className="text-[11px] text-brand-600 font-bold">
-              ({currentLangObj.name} - {currentLangObj.native})
-            </span>
+            <span>Text in {currentLangObj.name} ({currentLangObj.native}):</span>
           </label>
-          <button
-            onClick={() => setText("")}
-            className="text-xs text-slate-400 hover:text-slate-600 font-semibold"
-          >
-            Clear Text
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => handleLanguageConvert(selectedLang)}
+              className="text-xs font-bold text-brand-600 hover:text-brand-700 flex items-center gap-1 bg-brand-50 px-2.5 py-1 rounded-lg border border-brand-200"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Convert to {currentLangObj.name}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setText("")}
+              className="text-xs text-slate-400 hover:text-slate-600 font-semibold"
+            >
+              Clear
+            </button>
+          </div>
         </div>
 
-        <textarea
-          rows={6}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={`Paste or type any textbook text in ${currentLangObj.name} to read aloud...`}
-          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition-all leading-relaxed"
-        />
+        {isTranslating ? (
+          <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200">
+            <Loader2 className="w-6 h-6 animate-spin text-brand-600 mx-auto mb-2" />
+            <p className="text-xs font-bold text-slate-700">Converting text into {currentLangObj.name}...</p>
+          </div>
+        ) : (
+          <textarea
+            rows={6}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={`Type or paste any text in ${currentLangObj.name} to read aloud...`}
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition-all leading-relaxed"
+          />
+        )}
 
-        {/* Embedded Speech Component */}
+        {/* Embedded Speech Component with Speech Synthesis */}
         <TextToSpeech
           text={text}
-          title={`Audio Controller: ${currentLangObj.name} (${currentLangObj.native})`}
+          title={`Audio Narration: ${currentLangObj.name} (${currentLangObj.native})`}
           initialLang={selectedLang}
           showVoiceSelector={true}
           compact={false}
