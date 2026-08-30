@@ -13,7 +13,8 @@ import {
   Clock,
   Layers,
   FileCheck2,
-  Sliders
+  Sliders,
+  Edit3
 } from "lucide-react";
 import { useLearning } from "../context/LearningContext";
 import { Button } from "../components/common/Button";
@@ -41,7 +42,10 @@ export const SummaryDetail = () => {
   const [showTranslateModal, setShowTranslateModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [checkedRevision, setCheckedRevision] = useState({});
-  const [quizQuestionCount, setQuizQuestionCount] = useState(5);
+
+  // Quiz count state (preset or custom)
+  const [quizQuestionSelect, setQuizQuestionSelect] = useState("5");
+  const [customQuestionCount, setCustomQuestionCount] = useState(8);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
 
   useEffect(() => {
@@ -81,8 +85,17 @@ export const SummaryDetail = () => {
     }));
   };
 
+  const getFinalQuestionCount = () => {
+    if (quizQuestionSelect === "custom") {
+      const parsed = parseInt(customQuestionCount, 10);
+      return isNaN(parsed) || parsed < 1 ? 5 : Math.min(parsed, 30);
+    }
+    return parseInt(quizQuestionSelect, 10) || 5;
+  };
+
   const handleStartCustomQuiz = async () => {
     setGeneratingQuiz(true);
+    const finalCount = getFinalQuestionCount();
     try {
       const newQuiz = await api.generateQuiz({
         textbookId: summary.textbookId,
@@ -90,7 +103,7 @@ export const SummaryDetail = () => {
         topic: summary.topic,
         subject: summary.bookTitle,
         difficulty: summary.difficulty,
-        questionCount: parseInt(quizQuestionCount, 10),
+        questionCount: finalCount,
         language: summary.language || "en"
       });
       navigate(`/quiz?id=${newQuiz.id}`);
@@ -298,7 +311,7 @@ export const SummaryDetail = () => {
         </div>
       )}
 
-      {/* Dynamic AI Quiz Generator CTA with Question Count Selector */}
+      {/* Dynamic AI Quiz Generator CTA with Custom / Preset Question Count Selector */}
       <div className="bg-gradient-to-r from-brand-900 via-indigo-900 to-purple-900 rounded-3xl p-6 sm:p-8 text-white shadow-soft-lg flex flex-col md:flex-row items-center justify-between gap-6">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-amber-300 block mb-1">
@@ -308,21 +321,36 @@ export const SummaryDetail = () => {
             Ready to test your knowledge on "{summary.topic}"?
           </h3>
           <p className="text-xs sm:text-sm text-brand-200 mt-1 max-w-md">
-            Choose your quiz question count and evaluate your understanding.
+            Choose preset question count or type any custom number of questions to generate.
           </p>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
-          <select
-            value={quizQuestionCount}
-            onChange={(e) => setQuizQuestionCount(parseInt(e.target.value, 10))}
-            className="p-3 bg-white/10 text-white font-bold text-xs sm:text-sm rounded-xl border border-white/20 focus:outline-none"
-          >
-            <option value={5} className="text-slate-900">5 Questions</option>
-            <option value={10} className="text-slate-900">10 Questions</option>
-            <option value={15} className="text-slate-900">15 Questions</option>
-            <option value={20} className="text-slate-900">20 Questions</option>
-          </select>
+        <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <select
+              value={quizQuestionSelect}
+              onChange={(e) => setQuizQuestionSelect(e.target.value)}
+              className="p-3 bg-white/10 text-white font-bold text-xs sm:text-sm rounded-xl border border-white/20 focus:outline-none"
+            >
+              <option value="5" className="text-slate-900">5 Questions</option>
+              <option value="10" className="text-slate-900">10 Questions</option>
+              <option value="15" className="text-slate-900">15 Questions</option>
+              <option value="20" className="text-slate-900">20 Questions</option>
+              <option value="custom" className="text-slate-900">✍️ Custom Count...</option>
+            </select>
+
+            {quizQuestionSelect === "custom" && (
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={customQuestionCount}
+                onChange={(e) => setCustomQuestionCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                placeholder="Questions"
+                className="w-20 p-2.5 bg-white text-slate-900 font-extrabold text-sm rounded-xl border-2 border-amber-400 focus:outline-none"
+              />
+            )}
+          </div>
 
           <Button
             size="lg"
@@ -333,7 +361,7 @@ export const SummaryDetail = () => {
             onClick={handleStartCustomQuiz}
             className="bg-white text-brand-900 hover:bg-slate-100 font-bold px-6 shadow-soft-md"
           >
-            Start Quiz
+            Start {getFinalQuestionCount()}-Q Quiz
           </Button>
         </div>
       </div>

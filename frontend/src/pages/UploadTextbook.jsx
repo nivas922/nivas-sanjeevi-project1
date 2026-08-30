@@ -13,7 +13,8 @@ import {
   Layers,
   Sliders,
   HelpCircle,
-  Scan
+  Scan,
+  Edit3
 } from "lucide-react";
 import { Button } from "../components/common/Button";
 import { ProgressBar } from "../components/common/ProgressBar";
@@ -33,7 +34,10 @@ export const UploadTextbook = () => {
   const [targetLanguage, setTargetLanguage] = useState(activeLanguage || "en");
   const [difficulty, setDifficulty] = useState("Intermediate");
   const [summaryLength, setSummaryLength] = useState("Detailed");
-  const [questionCount, setQuestionCount] = useState(5);
+
+  // Question count states (Preset or Custom)
+  const [questionCountSelect, setQuestionCountSelect] = useState("5");
+  const [customQuestionCount, setCustomQuestionCount] = useState(8);
 
   // Processing states
   const [isProcessing, setIsProcessing] = useState(false);
@@ -106,11 +110,21 @@ export const UploadTextbook = () => {
     selectedFile.name.endsWith(".jpeg")
   );
 
+  const getEffectiveQuestionCount = () => {
+    if (questionCountSelect === "custom") {
+      const parsed = parseInt(customQuestionCount, 10);
+      return isNaN(parsed) || parsed < 1 ? 5 : Math.min(parsed, 30);
+    }
+    return parseInt(questionCountSelect, 10) || 5;
+  };
+
   const handleGenerateSummary = async () => {
     if (!selectedFile) {
       showWarning("Please select a textbook file before generating summary.");
       return;
     }
+
+    const finalQuestionCount = getEffectiveQuestionCount();
 
     setIsProcessing(true);
     setProgressPercent(10);
@@ -125,7 +139,7 @@ export const UploadTextbook = () => {
           targetLanguageName: targetLangObj.name,
           difficulty,
           summaryLength,
-          questionCount: parseInt(questionCount, 10)
+          questionCount: finalQuestionCount
         },
         (stage) => {
           setCurrentStage(stage);
@@ -134,7 +148,7 @@ export const UploadTextbook = () => {
       );
 
       refreshLearningData();
-      showSuccess(`Textbook processed into ${targetLangObj.name} and AI summary created!`);
+      showSuccess(`Textbook processed into ${targetLangObj.name} with ${finalQuestionCount}-question quiz!`);
 
       setTimeout(() => {
         navigate(`/summaries/${res.summary.id}`);
@@ -157,7 +171,7 @@ export const UploadTextbook = () => {
           Upload your textbook
         </h1>
         <p className="text-sm sm:text-base text-slate-500 mt-2">
-          Upload your textbook and let AI transform it into personalized learning material in your preferred Indian language.
+          Upload your textbook and let AI transform it into personalized learning material with custom quiz questions.
         </p>
       </div>
 
@@ -283,22 +297,40 @@ export const UploadTextbook = () => {
               </select>
             </div>
 
-            {/* Quiz Questions Count (5, 10, 15, 20) */}
+            {/* Quiz Questions Count (Preset or Custom Input) */}
             <div>
               <label className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
                 <HelpCircle className="w-4 h-4 text-amber-600" />
                 <span>Quiz Length</span>
               </label>
-              <select
-                value={questionCount}
-                onChange={(e) => setQuestionCount(parseInt(e.target.value, 10))}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              >
-                <option value={5}>5 Questions (Quick Quiz)</option>
-                <option value={10}>10 Questions (Standard Test)</option>
-                <option value={15}>15 Questions (Thorough Review)</option>
-                <option value={20}>20 Questions (Full Assessment)</option>
-              </select>
+              <div className="space-y-2">
+                <select
+                  value={questionCountSelect}
+                  onChange={(e) => setQuestionCountSelect(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="5">5 Questions (Quick Quiz)</option>
+                  <option value="10">10 Questions (Standard Test)</option>
+                  <option value="15">15 Questions (Thorough Review)</option>
+                  <option value="20">20 Questions (Full Assessment)</option>
+                  <option value="custom">✍️ Custom Number...</option>
+                </select>
+
+                {questionCountSelect === "custom" && (
+                  <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                    <input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={customQuestionCount}
+                      onChange={(e) => setCustomQuestionCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      placeholder="e.g. 7, 12, 18"
+                      className="w-full px-3 py-1.5 bg-amber-50/50 border border-amber-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                    <span className="text-[11px] font-bold text-slate-500 shrink-0">Questions</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -313,7 +345,7 @@ export const UploadTextbook = () => {
               disabled={!selectedFile}
               className="px-10 py-4 shadow-soft-md"
             >
-              Generate AI Summary & Adaptive Plan
+              Generate AI Summary & {getEffectiveQuestionCount()}-Question Quiz
             </Button>
           </div>
         </div>
@@ -329,7 +361,7 @@ export const UploadTextbook = () => {
               Processing Document & Synthesizing Knowledge
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-md mx-auto">
-              Extracting chapters, generating summaries, translating audio, and preparing your {questionCount}-question quiz.
+              Extracting chapters, generating summaries, translating audio, and preparing your {getEffectiveQuestionCount()}-question quiz.
             </p>
           </div>
 
@@ -357,7 +389,7 @@ export const UploadTextbook = () => {
               "4. Detecting topics",
               `5. Generating summary in ${SUPPORTED_LANGUAGES.find(l => l.code === targetLanguage)?.name || "Language"}`,
               "6. Synthesizing multilingual audio",
-              `7. Creating ${questionCount}-question adaptive quiz`,
+              `7. Creating ${getEffectiveQuestionCount()}-question adaptive quiz`,
               "8. Preparing personalized learning plan"
             ].map((stepText, idx) => {
               const isCompleted = currentStage && currentStage.step > idx + 1;
