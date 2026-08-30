@@ -22,12 +22,8 @@ export const SUPPORTED_LANGUAGES = [
   { code: "bn", name: "Bengali", native: "বাংলা", flag: "🇮🇳", bcp47: "bn-IN" },
 ];
 
-export const INITIAL_SUBJECT_PROGRESS = [
-  { subject: "Python Programming", progress: 0, color: "bg-emerald-500", text: "text-emerald-700", bgLight: "bg-emerald-50" },
-  { subject: "Database Management (DBMS)", progress: 0, color: "bg-brand-500", text: "text-brand-700", bgLight: "bg-brand-50" },
-  { subject: "Operating Systems", progress: 0, color: "bg-amber-500", text: "text-amber-700", bgLight: "bg-amber-50" },
-  { subject: "Computer Networks", progress: 0, color: "bg-rose-500", text: "text-rose-700", bgLight: "bg-rose-50" },
-];
+// Pure Zero-State: No pre-populated subjects
+export const INITIAL_SUBJECT_PROGRESS = [];
 
 export const MULTILINGUAL_SUMMARIES = {
   en: {

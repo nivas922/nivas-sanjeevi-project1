@@ -1,15 +1,15 @@
 ﻿import { INITIAL_SUBJECT_PROGRESS, DEPARTMENTS } from "../data/translations";
 
 const STORAGE_KEYS = {
-  USER: "learnai_user_v2",
-  TEXTBOOKS: "learnai_textbooks_v2",
-  SUMMARIES: "learnai_summaries_v2",
-  QUIZZES: "learnai_quizzes_v2",
-  QUIZ_ATTEMPTS: "learnai_quiz_attempts_v2",
-  RECOMMENDATIONS: "learnai_recommendations_v2",
-  SUBJECT_PROGRESS: "learnai_subject_progress_v2",
-  ACTIVITIES: "learnai_activities_v2",
-  TOKEN: "learnai_auth_token_v2"
+  USER: "learnai_user_v3",
+  TEXTBOOKS: "learnai_textbooks_v3",
+  SUMMARIES: "learnai_summaries_v3",
+  QUIZZES: "learnai_quizzes_v3",
+  QUIZ_ATTEMPTS: "learnai_quiz_attempts_v3",
+  RECOMMENDATIONS: "learnai_recommendations_v3",
+  SUBJECT_PROGRESS: "learnai_subject_progress_v3",
+  ACTIVITIES: "learnai_activities_v3",
+  TOKEN: "learnai_auth_token_v3"
 };
 
 export const createZeroStateUser = (name = "Student", email = "student@university.edu", department = "Computer Science & Engineering (CSE)", avatar = null) => {
@@ -33,12 +33,10 @@ export const createZeroStateUser = (name = "Student", email = "student@universit
 };
 
 export const storageService = {
-  // Clear all previous mock data completely
   clearSession() {
     Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
   },
 
-  // Initialize fresh user in true zero-state
   initNewUser(userData = {}) {
     const freshUser = createZeroStateUser(
       userData.name || "Student",
@@ -52,7 +50,7 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.QUIZZES, JSON.stringify([]));
     localStorage.setItem(STORAGE_KEYS.QUIZ_ATTEMPTS, JSON.stringify([]));
     localStorage.setItem(STORAGE_KEYS.RECOMMENDATIONS, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.SUBJECT_PROGRESS, JSON.stringify(INITIAL_SUBJECT_PROGRESS));
+    localStorage.setItem(STORAGE_KEYS.SUBJECT_PROGRESS, JSON.stringify([])); // Empty by default
     localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify([]));
     localStorage.setItem(STORAGE_KEYS.TOKEN, "jwt_token_" + Date.now());
     return freshUser;
@@ -85,8 +83,10 @@ export const storageService = {
     const updated = [textbook, ...list];
     localStorage.setItem(STORAGE_KEYS.TEXTBOOKS, JSON.stringify(updated));
 
-    // Update subject progress for uploaded textbook
-    this.incrementSubjectProgress(textbook.subject, 15);
+    // Add this real uploaded subject to progress tracking
+    if (textbook.subject) {
+      this.incrementSubjectProgress(textbook.subject, 20);
+    }
 
     this.addActivity({
       id: "act-" + Date.now(),
@@ -167,12 +167,11 @@ export const storageService = {
       this.updateUser(user);
     }
 
-    // Increase subject progress based on performance
+    // Update subject progress
     if (attempt.subject) {
-      this.incrementSubjectProgress(attempt.subject, Math.round(attempt.percentage * 0.25));
+      this.incrementSubjectProgress(attempt.subject, Math.round(attempt.percentage * 0.3));
     }
 
-    // Dynamic Adaptive engine updates
     this.updateAdaptiveRecommendations(attempt);
 
     this.addActivity({
@@ -187,19 +186,29 @@ export const storageService = {
     return attempt;
   },
 
-  incrementSubjectProgress(subjectName, delta = 10) {
+  incrementSubjectProgress(subjectName, delta = 15) {
+    if (!subjectName) return;
     const subjects = this.getSubjectProgress();
-    const index = subjects.findIndex(s => s.subject.toLowerCase().includes(subjectName.toLowerCase()) || subjectName.toLowerCase().includes(s.subject.toLowerCase()));
-    
+    const index = subjects.findIndex(s => s.subject.toLowerCase() === subjectName.toLowerCase());
+
+    const colors = [
+      { color: "bg-brand-500", text: "text-brand-700", bgLight: "bg-brand-50" },
+      { color: "bg-emerald-500", text: "text-emerald-700", bgLight: "bg-emerald-50" },
+      { color: "bg-purple-500", text: "text-purple-700", bgLight: "bg-purple-50" },
+      { color: "bg-amber-500", text: "text-amber-700", bgLight: "bg-amber-50" },
+      { color: "bg-rose-500", text: "text-rose-700", bgLight: "bg-rose-50" }
+    ];
+    const theme = colors[subjects.length % colors.length];
+
     if (index !== -1) {
-      subjects[index].progress = Math.min(100, subjects[index].progress + delta);
+      subjects[index].progress = Math.min(100, (subjects[index].progress || 0) + delta);
     } else {
       subjects.push({
         subject: subjectName,
         progress: Math.min(100, delta),
-        color: "bg-brand-500",
-        text: "text-brand-700",
-        bgLight: "bg-brand-50"
+        color: theme.color,
+        text: theme.text,
+        bgLight: theme.bgLight
       });
     }
     localStorage.setItem(STORAGE_KEYS.SUBJECT_PROGRESS, JSON.stringify(subjects));
@@ -211,7 +220,7 @@ export const storageService = {
       const weakRec = {
         id: "rec-" + Date.now(),
         topic: lastAttempt.topic,
-        subject: lastAttempt.subject || "Computer Science",
+        subject: lastAttempt.subject || "Academic Study",
         reason: `Your recent score was ${lastAttempt.percentage}%. System identified this as a weak topic requiring revision.`,
         recommendedDifficulty: "Beginner",
         estimatedMinutes: 8,
@@ -227,7 +236,7 @@ export const storageService = {
       const advancedRec = {
         id: "rec-" + Date.now(),
         topic: lastAttempt.topic + " (Advanced Applications)",
-        subject: lastAttempt.subject || "Computer Science",
+        subject: lastAttempt.subject || "Academic Study",
         reason: `Great score of ${lastAttempt.percentage}%! System unlocked advanced learning challenges.`,
         recommendedDifficulty: "Advanced",
         estimatedMinutes: 12,
@@ -246,7 +255,7 @@ export const storageService = {
   },
 
   getSubjectProgress() {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.SUBJECT_PROGRESS) || JSON.stringify(INITIAL_SUBJECT_PROGRESS));
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.SUBJECT_PROGRESS) || "[]");
   },
 
   getActivities() {

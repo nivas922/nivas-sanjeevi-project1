@@ -124,52 +124,74 @@ export const Dashboard = () => {
 
       {/* Main Grid: Subject Mastery & AI Recommendation Spotlight */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Subject Progress Section */}
+        {/* Subject Progress Section (Only Shows Real Studied Subjects) */}
         <div className="lg:col-span-2 bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-soft-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between gap-2 mb-6">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Learning Progress by Subject</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Increases as you study chapters and complete quizzes</p>
+                <p className="text-xs text-slate-500 mt-0.5">Increases dynamically as you study chapters and complete quizzes</p>
               </div>
-              <button
-                onClick={() => navigate("/progress")}
-                className="text-xs font-bold text-brand-600 hover:text-brand-700 flex items-center gap-1"
-              >
-                <span>Full Analytics</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              {subjectProgress.length > 0 && (
+                <button
+                  onClick={() => navigate("/progress")}
+                  className="text-xs font-bold text-brand-600 hover:text-brand-700 flex items-center gap-1"
+                >
+                  <span>Full Analytics</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
-            <div className="space-y-4">
-              {subjectProgress.map((sub, idx) => (
-                <div key={idx} className="p-4 rounded-2xl bg-slate-50/70 border border-slate-100 space-y-2">
-                  <div className="flex justify-between items-center text-sm font-bold text-slate-800">
-                    <span className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${sub.color}`} />
-                      {sub.subject}
-                    </span>
-                    <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-white border border-slate-200 shadow-soft-sm">
-                      {sub.progress || 0}%
-                    </span>
+            {subjectProgress && subjectProgress.length > 0 ? (
+              <div className="space-y-4">
+                {subjectProgress.map((sub, idx) => (
+                  <div key={idx} className="p-4 rounded-2xl bg-slate-50/70 border border-slate-100 space-y-2">
+                    <div className="flex justify-between items-center text-sm font-bold text-slate-800">
+                      <span className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${sub.color}`} />
+                        {sub.subject}
+                      </span>
+                      <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-white border border-slate-200 shadow-soft-sm">
+                        {sub.progress || 0}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-200/80 rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className={`${sub.color} h-2.5 rounded-full transition-all duration-700`}
+                        style={{ width: `${sub.progress || 0}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-200/80 rounded-full h-2.5 overflow-hidden">
-                    <div
-                      className={`${sub.color} h-2.5 rounded-full transition-all duration-700`}
-                      style={{ width: `${sub.progress || 0}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-10 text-center border-2 border-dashed border-slate-100 rounded-2xl space-y-3">
+                <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
+                <p className="text-sm font-semibold text-slate-600">No subjects added yet</p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Upload your textbook or curriculum notes to start tracking real progress for your subjects.
+                </p>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => navigate("/upload")}
+                  className="mt-2"
+                >
+                  Upload First Textbook
+                </Button>
+              </div>
+            )}
           </div>
 
-          <div className="mt-6 pt-5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
-            <span>Overall Syllabus Completion</span>
-            <span className="font-bold text-brand-600">
-              {Math.round((subjectProgress.reduce((acc, curr) => acc + (curr.progress || 0), 0) / (subjectProgress.length || 1)))}% Mastery
-            </span>
-          </div>
+          {subjectProgress.length > 0 && (
+            <div className="mt-6 pt-5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
+              <span>Overall Syllabus Completion</span>
+              <span className="font-bold text-brand-600">
+                {Math.round((subjectProgress.reduce((acc, curr) => acc + (curr.progress || 0), 0) / subjectProgress.length))}% Mastery
+              </span>
+            </div>
+          )}
         </div>
 
         {/* AI Recommendation Spotlight Card */}
@@ -218,7 +240,7 @@ export const Dashboard = () => {
                   Welcome to your AI Learning Engine
                 </h3>
                 <p className="text-xs text-purple-200 leading-relaxed">
-                  Upload your first textbook or take a quiz to let the adaptive engine diagnose your strengths and weak topics.
+                  Upload your textbook or take a quiz to let the adaptive engine diagnose your strengths and weak topics.
                 </p>
               </div>
             )}
@@ -247,7 +269,7 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* Lower Row: Recent Activity (Strict Zero State) */}
+      {/* Lower Row: Recent Activity */}
       <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-soft-sm">
         <div className="flex items-center justify-between mb-5">
           <div>

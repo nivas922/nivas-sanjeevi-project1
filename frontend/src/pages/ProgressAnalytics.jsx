@@ -49,6 +49,8 @@ export const ProgressAnalytics = () => {
 
   const quizHistory = analytics.quizHistory || [];
   const hasQuizHistory = quizHistory.length > 0;
+  const subjects = analytics.subjectProgress || [];
+  const hasSubjects = subjects.length > 0;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300 pb-12">
@@ -174,33 +176,42 @@ export const ProgressAnalytics = () => {
             <h3 className="text-base font-bold text-slate-900 mb-1">
               Subject Mastery Index
             </h3>
-            <p className="text-xs text-slate-500 mb-6">Increases as you study each subject</p>
+            <p className="text-xs text-slate-500 mb-6">Increases dynamically as you study each subject</p>
 
-            <div className="space-y-4">
-              {analytics.subjectProgress.map((sub, idx) => (
-                <div key={idx} className="space-y-1.5">
-                  <div className="flex justify-between text-xs font-bold text-slate-700">
-                    <span>{sub.subject}</span>
-                    <span>{sub.progress || 0}%</span>
+            {hasSubjects ? (
+              <div className="space-y-4">
+                {subjects.map((sub, idx) => (
+                  <div key={idx} className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-bold text-slate-700">
+                      <span>{sub.subject}</span>
+                      <span>{sub.progress || 0}%</span>
+                    </div>
+                    <ProgressBar
+                      value={sub.progress || 0}
+                      size="sm"
+                      color={sub.progress >= 80 ? "emerald" : sub.progress >= 50 ? "brand" : "rose"}
+                      showLabel={false}
+                    />
                   </div>
-                  <ProgressBar
-                    value={sub.progress || 0}
-                    size="sm"
-                    color={sub.progress >= 80 ? "emerald" : sub.progress >= 50 ? "brand" : "rose"}
-                    showLabel={false}
-                  />
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center border-2 border-dashed border-slate-100 rounded-2xl">
+                <p className="text-xs font-semibold text-slate-500">No subjects added</p>
+                <p className="text-[11px] text-slate-400 mt-1">Upload a textbook to start tracking subjects.</p>
+              </div>
+            )}
           </div>
 
-          <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-            <span className="text-xs text-slate-500 font-medium">
-              Overall Syllabus Mastery: <strong className="text-slate-900 font-bold">
-                {Math.round((analytics.subjectProgress.reduce((acc, curr) => acc + (curr.progress || 0), 0) / (analytics.subjectProgress.length || 1)))}%
-              </strong>
-            </span>
-          </div>
+          {hasSubjects && (
+            <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+              <span className="text-xs text-slate-500 font-medium">
+                Overall Syllabus Mastery: <strong className="text-slate-900 font-bold">
+                  {Math.round((subjects.reduce((acc, curr) => acc + (curr.progress || 0), 0) / subjects.length))}%
+                </strong>
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>

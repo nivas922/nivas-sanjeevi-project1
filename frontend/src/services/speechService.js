@@ -38,41 +38,61 @@
       bn: "bn-IN",
       en: "en-US"
     };
-    return map[langCode] || langCode || "en-US";
+    return map[langCode] || "en-US";
   }
 
-  findVoiceForLanguage(langCode) {
-    const voices = this.getVoices();
+  // Get curated or browser voices matching the target language
+  getVoicesForLanguage(langCode) {
+    const allVoices = this.getVoices();
     const bcp47 = this.getBcp47Code(langCode).toLowerCase();
-    const shortCode = langCode ? langCode.toLowerCase() : "en";
+    const prefix = langCode ? langCode.toLowerCase() : "en";
 
-    if (!voices || voices.length === 0) return null;
+    // 1. Check if browser has actual installed voices for this language
+    const matched = allVoices.filter(v => 
+      v.lang.toLowerCase() === bcp47 ||
+      v.lang.toLowerCase().startsWith(prefix) ||
+      (v.name && v.name.toLowerCase().includes(prefix))
+    );
 
-    // 1. Try exact BCP-47 match (e.g., ta-IN, hi-IN)
-    let match = voices.find(v => v.lang.toLowerCase() === bcp47);
-    if (match) return match;
-
-    // 2. Try prefix match (e.g., ta, hi, te)
-    match = voices.find(v => v.lang.toLowerCase().startsWith(shortCode));
-    if (match) return match;
-
-    // 3. Try name matching (e.g., "Tamil", "Hindi", "Google हिन्दी", etc.)
-    const nameMap = {
-      ta: "tamil",
-      hi: "hindi",
-      te: "telugu",
-      kn: "kannada",
-      ml: "malayalam",
-      bn: "bengali"
-    };
-    const targetName = nameMap[shortCode];
-    if (targetName) {
-      match = voices.find(v => v.name.toLowerCase().includes(targetName));
-      if (match) return match;
+    if (matched.length > 0) {
+      return matched;
     }
 
-    // 4. Default fallback
-    return voices.find(v => v.lang.toLowerCase().startsWith("en")) || voices[0] || null;
+    // 2. Provide language-tailored voice profiles for Indian Languages
+    const languageVoicePresets = {
+      ta: [
+        { name: "Tamil Natural Voice (தமிழ் - ta-IN)", lang: "ta-IN", default: true },
+        { name: "Google தமிழ் (ta-IN)", lang: "ta-IN" },
+        { name: "Microsoft Valluvar (ta-IN)", lang: "ta-IN" }
+      ],
+      hi: [
+        { name: "Hindi Natural Voice (हिन्दी - hi-IN)", lang: "hi-IN", default: true },
+        { name: "Google हिन्दी (hi-IN)", lang: "hi-IN" },
+        { name: "Microsoft Hemant (hi-IN)", lang: "hi-IN" }
+      ],
+      te: [
+        { name: "Telugu Natural Voice (తెలుగు - te-IN)", lang: "te-IN", default: true },
+        { name: "Microsoft Mohan (te-IN)", lang: "te-IN" }
+      ],
+      kn: [
+        { name: "Kannada Natural Voice (ಕನ್ನಡ - kn-IN)", lang: "kn-IN", default: true },
+        { name: "Microsoft Gagan (kn-IN)", lang: "kn-IN" }
+      ],
+      ml: [
+        { name: "Malayalam Natural Voice (മലയാളം - ml-IN)", lang: "ml-IN", default: true },
+        { name: "Microsoft Midhun (ml-IN)", lang: "ml-IN" }
+      ],
+      bn: [
+        { name: "Bengali Natural Voice (বাংলা - bn-IN)", lang: "bn-IN", default: true },
+        { name: "Microsoft Bashkar (bn-IN)", lang: "bn-IN" }
+      ],
+      en: allVoices.length > 0 ? allVoices : [
+        { name: "English Natural Voice (en-US)", lang: "en-US", default: true },
+        { name: "English Indian Accent (en-IN)", lang: "en-IN" }
+      ]
+    };
+
+    return languageVoicePresets[langCode] || languageVoicePresets.en;
   }
 
   speak({
@@ -98,7 +118,6 @@
       return;
     }
 
-    // Clean text of markdown artifacts for natural reading
     const cleanText = text
       .replace(/[*_#`~\[\]()]/g, " ")
       .replace(/\s+/g, " ")
@@ -110,12 +129,23 @@
     utterance.rate = Math.max(0.5, Math.min(2.0, rate));
     utterance.pitch = pitch;
 
+    // Find actual matching system voice if available
+    const systemVoices = this.getVoices();
+    let selectedVoice = null;
+
     if (voiceName) {
-      const selected = this.getVoices().find(v => v.name === voiceName);
-      if (selected) utterance.voice = selected;
-    } else {
-      const matchedVoice = this.findVoiceForLanguage(lang);
-      if (matchedVoice) utterance.voice = matchedVoice;
+      selectedVoice = systemVoices.find(v => v.name === voiceName);
+    }
+
+    if (!selectedVoice) {
+      selectedVoice = systemVoices.find(v => 
+        v.lang.toLowerCase() === bcp47.toLowerCase() ||
+        v.lang.toLowerCase().startsWith(lang.toLowerCase())
+      );
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
     }
 
     utterance.onstart = () => {
