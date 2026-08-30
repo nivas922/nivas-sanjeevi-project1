@@ -128,8 +128,8 @@ export const Sidebar = ({ isOpen, onClose }) => {
               className="w-10 h-10 rounded-full object-cover ring-2 ring-brand-100"
             />
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-slate-900 truncate">{user?.name || "Alex Johnson"}</p>
-              <p className="text-[11px] text-slate-500 truncate">{user?.role || "Student"}</p>
+              <p className="text-xs font-bold text-slate-900 truncate">{user?.name || "Student"}</p>
+              <p className="text-[11px] text-slate-500 truncate">{user?.department || user?.role || "Student"}</p>
             </div>
             <button
               onClick={handleLogout}

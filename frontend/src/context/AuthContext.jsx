@@ -10,10 +10,9 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check initial auth state from storage
     const savedToken = storageService.getToken();
-    if (savedToken) {
-      const savedUser = storageService.getUser();
+    const savedUser = storageService.getUser();
+    if (savedToken && savedUser) {
       setUser(savedUser);
       setToken(savedToken);
     }
@@ -32,10 +31,34 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (name, email, password) => {
+  const loginWithGoogle = async () => {
     setLoading(true);
     try {
-      const res = await api.register({ name, email, password });
+      const res = await api.loginWithGoogle();
+      setUser(res.user);
+      setToken(res.token);
+      return res.user;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loginWithMobile = async (phoneNumber, otp) => {
+    setLoading(true);
+    try {
+      const res = await api.loginWithMobile(phoneNumber, otp);
+      setUser(res.user);
+      setToken(res.token);
+      return res.user;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const register = async (name, email, password, department) => {
+    setLoading(true);
+    try {
+      const res = await api.register({ name, email, password, department });
       setUser(res.user);
       setToken(res.token);
       return res.user;
@@ -64,6 +87,8 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated: Boolean(user && token),
         loading,
         login,
+        loginWithGoogle,
+        loginWithMobile,
         register,
         logout,
         updateProfile

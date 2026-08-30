@@ -4,15 +4,16 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useLearning } from "../../context/LearningContext";
 import { Button } from "../common/Button";
+import { SUPPORTED_LANGUAGES } from "../../data/translations";
 
 export const Navbar = ({ onMenuClick }) => {
   const { user } = useAuth();
-  const { supportedLanguages, activeLanguage, setActiveLanguage } = useLearning();
+  const { activeLanguage, setActiveLanguage } = useLearning();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const navigate = useNavigate();
 
-  const activeLangObj = supportedLanguages.find(l => l.code === activeLanguage) || supportedLanguages[0];
+  const activeLangObj = SUPPORTED_LANGUAGES.find(l => l.code === activeLanguage) || SUPPORTED_LANGUAGES[0];
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between gap-4">
@@ -67,7 +68,7 @@ export const Navbar = ({ onMenuClick }) => {
                 <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
                   Target Language
                 </div>
-                {supportedLanguages.map((lang) => (
+                {SUPPORTED_LANGUAGES.map((lang) => (
                   <button
                     key={lang.code}
                     onClick={() => {
@@ -95,7 +96,6 @@ export const Navbar = ({ onMenuClick }) => {
             title="Notifications"
           >
             <Bell className="w-5 h-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-brand-600 rounded-full ring-2 ring-white" />
           </button>
 
           {showNotifications && (
@@ -104,19 +104,15 @@ export const Navbar = ({ onMenuClick }) => {
               <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-soft-lg border border-slate-100 p-4 z-50 animate-in fade-in slide-in-from-top-2">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">AI Notifications</h4>
-                  <span className="text-[10px] bg-brand-100 text-brand-700 font-bold px-2 py-0.5 rounded-full">New</span>
+                  <span className="text-[10px] bg-brand-100 text-brand-700 font-bold px-2 py-0.5 rounded-full">Active</span>
                 </div>
                 <div className="mt-3 space-y-2.5">
                   <div className="p-2.5 rounded-xl bg-purple-50/70 border border-purple-100 flex items-start gap-2.5">
                     <Sparkles className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-xs font-bold text-purple-900">Adaptive Recommendation</p>
-                      <p className="text-[11px] text-purple-700 mt-0.5">Focus on TCP/IP Fundamentals to raise your Computer Networks score.</p>
+                      <p className="text-xs font-bold text-purple-900">Adaptive Engine Ready</p>
+                      <p className="text-[11px] text-purple-700 mt-0.5">Upload a textbook or take a quiz to begin personalized tracking.</p>
                     </div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                    <p className="text-xs font-semibold text-slate-800">Streak Updated 🔥</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">You have maintained a 7-day active study streak!</p>
                   </div>
                 </div>
               </div>
@@ -128,6 +124,7 @@ export const Navbar = ({ onMenuClick }) => {
         <div
           onClick={() => navigate("/settings")}
           className="flex items-center gap-2 cursor-pointer p-1 rounded-xl hover:bg-slate-100 transition-colors"
+          title="Account Settings"
         >
           <img
             src={user?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"}

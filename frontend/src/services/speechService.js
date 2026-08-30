@@ -22,36 +22,57 @@
   }
 
   getVoices() {
-    if (this.voices.length === 0 && this.synth) {
+    if (this.synth && (!this.voices || this.voices.length === 0)) {
       this.voices = this.synth.getVoices();
     }
-    return this.voices;
+    return this.voices || [];
+  }
+
+  getBcp47Code(langCode) {
+    const map = {
+      ta: "ta-IN",
+      hi: "hi-IN",
+      te: "te-IN",
+      kn: "kn-IN",
+      ml: "ml-IN",
+      bn: "bn-IN",
+      en: "en-US"
+    };
+    return map[langCode] || langCode || "en-US";
   }
 
   findVoiceForLanguage(langCode) {
     const voices = this.getVoices();
+    const bcp47 = this.getBcp47Code(langCode).toLowerCase();
+    const shortCode = langCode ? langCode.toLowerCase() : "en";
+
     if (!voices || voices.length === 0) return null;
 
-    // Language mapping prefixes
-    const langMap = {
-      en: ["en-US", "en-GB", "en-IN", "en"],
-      ta: ["ta-IN", "ta"],
-      hi: ["hi-IN", "hi"],
-      te: ["te-IN", "te"],
-      kn: ["kn-IN", "kn"],
-      ml: ["ml-IN", "ml"],
-      bn: ["bn-IN", "bn-BD", "bn"],
+    // 1. Try exact BCP-47 match (e.g., ta-IN, hi-IN)
+    let match = voices.find(v => v.lang.toLowerCase() === bcp47);
+    if (match) return match;
+
+    // 2. Try prefix match (e.g., ta, hi, te)
+    match = voices.find(v => v.lang.toLowerCase().startsWith(shortCode));
+    if (match) return match;
+
+    // 3. Try name matching (e.g., "Tamil", "Hindi", "Google हिन्दी", etc.)
+    const nameMap = {
+      ta: "tamil",
+      hi: "hindi",
+      te: "telugu",
+      kn: "kannada",
+      ml: "malayalam",
+      bn: "bengali"
     };
-
-    const targetPrefixes = langMap[langCode] || ["en-US", "en"];
-
-    for (const prefix of targetPrefixes) {
-      const match = voices.find(v => v.lang.toLowerCase().startsWith(prefix.toLowerCase()));
+    const targetName = nameMap[shortCode];
+    if (targetName) {
+      match = voices.find(v => v.name.toLowerCase().includes(targetName));
       if (match) return match;
     }
 
-    // Default fallback
-    return voices.find(v => v.lang.startsWith("en")) || voices[0] || null;
+    // 4. Default fallback
+    return voices.find(v => v.lang.toLowerCase().startsWith("en")) || voices[0] || null;
   }
 
   speak({
@@ -71,14 +92,22 @@
       return;
     }
 
-    this.stop(); // Stop any current speech
+    this.stop();
 
     if (!text || text.trim().length === 0) {
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = rate;
+    // Clean text of markdown artifacts for natural reading
+    const cleanText = text
+      .replace(/[*_#`~\[\]()]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    const bcp47 = this.getBcp47Code(lang);
+    utterance.lang = bcp47;
+    utterance.rate = Math.max(0.5, Math.min(2.0, rate));
     utterance.pitch = pitch;
 
     if (voiceName) {

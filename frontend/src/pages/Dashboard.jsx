@@ -10,8 +10,7 @@ import {
   Sparkles,
   ArrowRight,
   UploadCloud,
-  CheckCircle2,
-  TrendingUp,
+  Layers,
   Brain
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -19,7 +18,6 @@ import { useLearning } from "../context/LearningContext";
 import { StatCard } from "../components/common/StatCard";
 import { ProgressBar } from "../components/common/ProgressBar";
 import { Button } from "../components/common/Button";
-import { Badge } from "../components/common/Badge";
 import { storageService } from "../services/storageService";
 
 export const Dashboard = () => {
@@ -47,7 +45,6 @@ export const Dashboard = () => {
     <div className="space-y-8 animate-in fade-in duration-300">
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-brand-900 via-brand-800 to-accent-900 rounded-3xl p-6 sm:p-8 text-white shadow-soft-lg relative overflow-hidden">
-        {/* Subtle background glow */}
         <div className="absolute top-0 right-0 w-80 h-80 bg-brand-500/20 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold mb-3 border border-white/15">
@@ -58,7 +55,7 @@ export const Dashboard = () => {
             {getGreeting()}, {user?.name || "Student"}! 👋
           </h1>
           <p className="text-brand-100 text-sm sm:text-base mt-2 max-w-xl font-normal leading-relaxed">
-            Continue your personalized multilingual textbook learning journey. Your mastery is tracked in real-time.
+            {user?.department ? `${user.department} • ` : ""}Continue your personalized multilingual textbook learning journey.
           </p>
         </div>
 
@@ -84,42 +81,42 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* 5 Main Stat Cards */}
+      {/* 5 Core Stat Cards (Strict Zero-State Init) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard
           title="Books Studied"
-          value={textbooks.length}
-          subtitle="4 Total Subjects"
+          value={textbooks?.length || 0}
+          subtitle="In your library"
           icon={BookOpen}
           colorScheme="brand"
         />
         <StatCard
           title="Summaries Generated"
-          value={summaries.length}
+          value={summaries?.length || 0}
           subtitle="AI & Multilingual"
           icon={FileText}
           colorScheme="purple"
         />
         <StatCard
           title="Quizzes Taken"
-          value={user?.quizzesTaken || 14}
-          subtitle="Adaptive MCQ tests"
+          value={user?.quizzesTaken || 0}
+          subtitle="Adaptive evaluations"
           icon={HelpCircle}
           colorScheme="amber"
         />
         <StatCard
           title="Average Score"
-          value={`${user?.averageScore || 78}%`}
+          value={`${user?.averageScore || 0}%`}
           subtitle="Across all quizzes"
           icon={Award}
-          trend="+5%"
+          trend={user?.quizzesTaken > 0 ? "+5%" : null}
           trendPositive={true}
           colorScheme="emerald"
         />
         <StatCard
           title="Learning Streak"
-          value={`${user?.streakDays || 7} Days`}
-          subtitle="Keep it going! 🔥"
+          value={`${user?.streakDays || 0} Days`}
+          subtitle="Daily study rhythm"
           icon={Flame}
           colorScheme="rose"
         />
@@ -127,13 +124,13 @@ export const Dashboard = () => {
 
       {/* Main Grid: Subject Mastery & AI Recommendation Spotlight */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Subject Progress Section (2 cols) */}
+        {/* Subject Progress Section */}
         <div className="lg:col-span-2 bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-soft-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between gap-2 mb-6">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Learning Progress by Subject</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Real-time mastery index computed from quiz scores & completed summaries</p>
+                <p className="text-xs text-slate-500 mt-0.5">Increases as you study chapters and complete quizzes</p>
               </div>
               <button
                 onClick={() => navigate("/progress")}
@@ -144,7 +141,7 @@ export const Dashboard = () => {
               </button>
             </div>
 
-            <div className="space-y-5">
+            <div className="space-y-4">
               {subjectProgress.map((sub, idx) => (
                 <div key={idx} className="p-4 rounded-2xl bg-slate-50/70 border border-slate-100 space-y-2">
                   <div className="flex justify-between items-center text-sm font-bold text-slate-800">
@@ -153,13 +150,13 @@ export const Dashboard = () => {
                       {sub.subject}
                     </span>
                     <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-white border border-slate-200 shadow-soft-sm">
-                      {sub.progress}%
+                      {sub.progress || 0}%
                     </span>
                   </div>
                   <div className="w-full bg-slate-200/80 rounded-full h-2.5 overflow-hidden">
                     <div
                       className={`${sub.color} h-2.5 rounded-full transition-all duration-700`}
-                      style={{ width: `${sub.progress}%` }}
+                      style={{ width: `${sub.progress || 0}%` }}
                     />
                   </div>
                 </div>
@@ -169,11 +166,13 @@ export const Dashboard = () => {
 
           <div className="mt-6 pt-5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
             <span>Overall Syllabus Completion</span>
-            <span className="font-bold text-brand-600">70% Target Reached</span>
+            <span className="font-bold text-brand-600">
+              {Math.round((subjectProgress.reduce((acc, curr) => acc + (curr.progress || 0), 0) / (subjectProgress.length || 1)))}% Mastery
+            </span>
           </div>
         </div>
 
-        {/* AI Recommendation Spotlight Card (1 col) */}
+        {/* AI Recommendation Spotlight Card */}
         <div className="bg-gradient-to-b from-purple-900 to-indigo-950 rounded-3xl p-6 sm:p-7 text-white shadow-soft-lg flex flex-col justify-between relative overflow-hidden">
           <div className="absolute -right-8 -top-8 w-40 h-40 bg-purple-500/20 rounded-full blur-2xl pointer-events-none" />
           
@@ -208,17 +207,20 @@ export const Dashboard = () => {
                     <span className="font-bold text-white">{topRecommendation.topic}</span>
                   </div>
                   <div className="flex justify-between text-purple-200">
-                    <span>Est. Time:</span>
-                    <span className="font-bold text-white">{topRecommendation.estimatedMinutes} mins</span>
-                  </div>
-                  <div className="flex justify-between text-purple-200">
                     <span>Target Difficulty:</span>
                     <span className="font-bold text-amber-300">{topRecommendation.recommendedDifficulty}</span>
                   </div>
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-purple-200">All topics are in good shape! Take a new quiz to discover new challenge areas.</p>
+              <div className="space-y-3 py-2">
+                <h3 className="text-base font-bold text-white leading-snug">
+                  Welcome to your AI Learning Engine
+                </h3>
+                <p className="text-xs text-purple-200 leading-relaxed">
+                  Upload your first textbook or take a quiz to let the adaptive engine diagnose your strengths and weak topics.
+                </p>
+              </div>
             )}
           </div>
 
@@ -228,27 +230,34 @@ export const Dashboard = () => {
               size="md"
               icon={ArrowRight}
               iconPosition="right"
-              onClick={() => navigate(topRecommendation?.targetSummaryId ? `/summaries/${topRecommendation.targetSummaryId}` : "/recommendations")}
+              onClick={() => {
+                if (topRecommendation?.targetSummaryId) {
+                  navigate(`/summaries/${topRecommendation.targetSummaryId}`);
+                } else if (textbooks.length > 0) {
+                  navigate("/summaries");
+                } else {
+                  navigate("/upload");
+                }
+              }}
               className="w-full bg-purple-500 hover:bg-purple-400 text-white font-bold"
             >
-              Start Recommended Learning
+              {topRecommendation ? "Start Recommended Learning" : "Upload First Textbook"}
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Lower Row: Recent Activity & Quick Textbook Shortcuts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Activity Timeline (2 cols) */}
-        <div className="lg:col-span-2 bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-soft-sm">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Recent Learning Activity</h3>
-              <p className="text-xs text-slate-500">Your textbook interactions and evaluation milestones</p>
-            </div>
-            <Clock className="w-4 h-4 text-slate-400" />
+      {/* Lower Row: Recent Activity (Strict Zero State) */}
+      <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-soft-sm">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">Recent Learning Activity</h3>
+            <p className="text-xs text-slate-500">Your textbook interactions and evaluation milestones</p>
           </div>
+          <Clock className="w-4 h-4 text-slate-400" />
+        </div>
 
+        {activities && activities.length > 0 ? (
           <div className="divide-y divide-slate-100">
             {activities.map((act) => (
               <div key={act.id} className="py-3.5 flex items-center justify-between gap-4">
@@ -262,37 +271,12 @@ export const Dashboard = () => {
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Continue Learning Card (1 col) */}
-        <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-soft-sm flex flex-col justify-between">
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-brand-600 bg-brand-50 px-2.5 py-1 rounded-lg">
-              Resume Study
-            </span>
-            <h4 className="text-base font-bold text-slate-900 mt-3 mb-1">
-              Computer Networks: Kurose & Ross
-            </h4>
-            <p className="text-xs text-slate-500 mb-4">
-              Chapter 3: Transport Layer (TCP vs UDP)
-            </p>
-
-            <ProgressBar value={55} size="md" color="brand" label="Chapter Progress" />
+        ) : (
+          <div className="py-8 text-center border-2 border-dashed border-slate-100 rounded-2xl">
+            <p className="text-sm font-semibold text-slate-500">No activity yet</p>
+            <p className="text-xs text-slate-400 mt-1">Upload a textbook PDF or take a quiz to record your progress.</p>
           </div>
-
-          <div className="mt-6 pt-4 border-t border-slate-100">
-            <Button
-              variant="secondary"
-              size="md"
-              icon={ArrowRight}
-              iconPosition="right"
-              onClick={() => navigate("/summaries/sum-1")}
-              className="w-full"
-            >
-              Continue from where you stopped
-            </Button>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

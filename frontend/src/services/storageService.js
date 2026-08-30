@@ -1,68 +1,77 @@
-﻿import {
-  INITIAL_USER,
-  DEMO_TEXTBOOKS,
-  DEMO_SUMMARIES,
-  DEMO_QUIZZES,
-  DEMO_RECOMMENDATIONS,
-  SUBJECT_PROGRESS,
-  RECENT_ACTIVITIES
-} from "../data/demoData";
+﻿import { INITIAL_SUBJECT_PROGRESS, DEPARTMENTS } from "../data/translations";
 
 const STORAGE_KEYS = {
-  USER: "learnai_user",
-  TEXTBOOKS: "learnai_textbooks",
-  SUMMARIES: "learnai_summaries",
-  QUIZZES: "learnai_quizzes",
-  QUIZ_ATTEMPTS: "learnai_quiz_attempts",
-  RECOMMENDATIONS: "learnai_recommendations",
-  SUBJECT_PROGRESS: "learnai_subject_progress",
-  ACTIVITIES: "learnai_activities",
-  TOKEN: "learnai_auth_token"
+  USER: "learnai_user_v2",
+  TEXTBOOKS: "learnai_textbooks_v2",
+  SUMMARIES: "learnai_summaries_v2",
+  QUIZZES: "learnai_quizzes_v2",
+  QUIZ_ATTEMPTS: "learnai_quiz_attempts_v2",
+  RECOMMENDATIONS: "learnai_recommendations_v2",
+  SUBJECT_PROGRESS: "learnai_subject_progress_v2",
+  ACTIVITIES: "learnai_activities_v2",
+  TOKEN: "learnai_auth_token_v2"
+};
+
+export const createZeroStateUser = (name = "Student", email = "student@university.edu", department = "Computer Science & Engineering (CSE)", avatar = null) => {
+  return {
+    id: "usr_" + Date.now(),
+    name: name,
+    email: email,
+    role: department,
+    department: department,
+    avatar: avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name || "Student")}`,
+    streakDays: 0,
+    totalStudyHours: 0,
+    quizzesTaken: 0,
+    averageScore: 0,
+    preferredLanguage: "en",
+    preferredDifficulty: "Intermediate",
+    speechRate: 1.0,
+    speechVoice: "default",
+    notifications: true
+  };
 };
 
 export const storageService = {
-  // Initialize storage with demo data if empty
-  init() {
-    if (!localStorage.getItem(STORAGE_KEYS.USER)) {
-      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(INITIAL_USER));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.TEXTBOOKS)) {
-      localStorage.setItem(STORAGE_KEYS.TEXTBOOKS, JSON.stringify(DEMO_TEXTBOOKS));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.SUMMARIES)) {
-      localStorage.setItem(STORAGE_KEYS.SUMMARIES, JSON.stringify(DEMO_SUMMARIES));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.QUIZZES)) {
-      localStorage.setItem(STORAGE_KEYS.QUIZZES, JSON.stringify(DEMO_QUIZZES));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.RECOMMENDATIONS)) {
-      localStorage.setItem(STORAGE_KEYS.RECOMMENDATIONS, JSON.stringify(DEMO_RECOMMENDATIONS));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.SUBJECT_PROGRESS)) {
-      localStorage.setItem(STORAGE_KEYS.SUBJECT_PROGRESS, JSON.stringify(SUBJECT_PROGRESS));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.ACTIVITIES)) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(RECENT_ACTIVITIES));
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.TOKEN)) {
-      localStorage.setItem(STORAGE_KEYS.TOKEN, "demo_jwt_token_alex_101");
-    }
+  // Clear all previous mock data completely
+  clearSession() {
+    Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
+  },
+
+  // Initialize fresh user in true zero-state
+  initNewUser(userData = {}) {
+    const freshUser = createZeroStateUser(
+      userData.name || "Student",
+      userData.email || "student@university.edu",
+      userData.department || DEPARTMENTS[0],
+      userData.avatar
+    );
+    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(freshUser));
+    localStorage.setItem(STORAGE_KEYS.TEXTBOOKS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.SUMMARIES, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.QUIZZES, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.QUIZ_ATTEMPTS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.RECOMMENDATIONS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.SUBJECT_PROGRESS, JSON.stringify(INITIAL_SUBJECT_PROGRESS));
+    localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEYS.TOKEN, "jwt_token_" + Date.now());
+    return freshUser;
   },
 
   getUser() {
-    this.init();
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || JSON.stringify(INITIAL_USER));
+    const stored = localStorage.getItem(STORAGE_KEYS.USER);
+    if (!stored) return null;
+    return JSON.parse(stored);
   },
 
   updateUser(updatedFields) {
-    const current = this.getUser();
+    const current = this.getUser() || createZeroStateUser();
     const newUser = { ...current, ...updatedFields };
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(newUser));
     return newUser;
   },
 
   getTextbooks() {
-    this.init();
     return JSON.parse(localStorage.getItem(STORAGE_KEYS.TEXTBOOKS) || "[]");
   },
 
@@ -75,6 +84,10 @@ export const storageService = {
     const list = this.getTextbooks();
     const updated = [textbook, ...list];
     localStorage.setItem(STORAGE_KEYS.TEXTBOOKS, JSON.stringify(updated));
+
+    // Update subject progress for uploaded textbook
+    this.incrementSubjectProgress(textbook.subject, 15);
+
     this.addActivity({
       id: "act-" + Date.now(),
       type: "upload",
@@ -93,19 +106,19 @@ export const storageService = {
   },
 
   getSummaries() {
-    this.init();
     return JSON.parse(localStorage.getItem(STORAGE_KEYS.SUMMARIES) || "[]");
   },
 
   getSummaryById(id) {
     const list = this.getSummaries();
-    return list.find(s => s.id === id) || list[0];
+    return list.find(s => s.id === id) || list[0] || null;
   },
 
   addSummary(summary) {
     const list = this.getSummaries();
     const updated = [summary, ...list];
     localStorage.setItem(STORAGE_KEYS.SUMMARIES, JSON.stringify(updated));
+
     this.addActivity({
       id: "act-" + Date.now(),
       type: "summary",
@@ -118,13 +131,12 @@ export const storageService = {
   },
 
   getQuizzes() {
-    this.init();
     return JSON.parse(localStorage.getItem(STORAGE_KEYS.QUIZZES) || "[]");
   },
 
   getQuizById(id) {
     const list = this.getQuizzes();
-    return list.find(q => q.id === id) || list[0];
+    return list.find(q => q.id === id) || list[0] || null;
   },
 
   addQuiz(quiz) {
@@ -145,12 +157,20 @@ export const storageService = {
 
     // Update user stats
     const user = this.getUser();
-    user.quizzesTaken += 1;
-    
-    // Calculate new average
-    const totalScore = newAttempts.reduce((acc, curr) => acc + curr.percentage, 0);
-    user.averageScore = Math.round(totalScore / newAttempts.length);
-    this.updateUser(user);
+    if (user) {
+      user.quizzesTaken = (user.quizzesTaken || 0) + 1;
+      user.streakDays = Math.max(user.streakDays || 0, 1);
+      user.totalStudyHours = parseFloat(((user.totalStudyHours || 0) + 0.25).toFixed(2));
+      
+      const totalScore = newAttempts.reduce((acc, curr) => acc + curr.percentage, 0);
+      user.averageScore = Math.round(totalScore / newAttempts.length);
+      this.updateUser(user);
+    }
+
+    // Increase subject progress based on performance
+    if (attempt.subject) {
+      this.incrementSubjectProgress(attempt.subject, Math.round(attempt.percentage * 0.25));
+    }
 
     // Dynamic Adaptive engine updates
     this.updateAdaptiveRecommendations(attempt);
@@ -167,19 +187,36 @@ export const storageService = {
     return attempt;
   },
 
+  incrementSubjectProgress(subjectName, delta = 10) {
+    const subjects = this.getSubjectProgress();
+    const index = subjects.findIndex(s => s.subject.toLowerCase().includes(subjectName.toLowerCase()) || subjectName.toLowerCase().includes(s.subject.toLowerCase()));
+    
+    if (index !== -1) {
+      subjects[index].progress = Math.min(100, subjects[index].progress + delta);
+    } else {
+      subjects.push({
+        subject: subjectName,
+        progress: Math.min(100, delta),
+        color: "bg-brand-500",
+        text: "text-brand-700",
+        bgLight: "bg-brand-50"
+      });
+    }
+    localStorage.setItem(STORAGE_KEYS.SUBJECT_PROGRESS, JSON.stringify(subjects));
+  },
+
   updateAdaptiveRecommendations(lastAttempt) {
-    // If score < 60% -> Add targeted weak topic recommendation
     const recs = this.getRecommendations();
     if (lastAttempt.percentage < 60) {
       const weakRec = {
         id: "rec-" + Date.now(),
         topic: lastAttempt.topic,
         subject: lastAttempt.subject || "Computer Science",
-        reason: `Your recent score was ${lastAttempt.percentage}%. System classified this as a weak topic requiring immediate reinforcement.`,
+        reason: `Your recent score was ${lastAttempt.percentage}%. System identified this as a weak topic requiring revision.`,
         recommendedDifficulty: "Beginner",
-        estimatedMinutes: 10,
+        estimatedMinutes: 8,
         actionType: "summary",
-        targetSummaryId: lastAttempt.summaryId || "sum-1",
+        targetSummaryId: lastAttempt.summaryId || null,
         targetQuizId: lastAttempt.quizId,
         urgency: "High",
         badge: "Weak Topic Detected"
@@ -187,14 +224,13 @@ export const storageService = {
       const filtered = recs.filter(r => r.topic !== lastAttempt.topic);
       localStorage.setItem(STORAGE_KEYS.RECOMMENDATIONS, JSON.stringify([weakRec, ...filtered]));
     } else if (lastAttempt.percentage >= 80) {
-      // Advance to next level
       const advancedRec = {
         id: "rec-" + Date.now(),
         topic: lastAttempt.topic + " (Advanced Applications)",
         subject: lastAttempt.subject || "Computer Science",
-        reason: `Excellent score of ${lastAttempt.percentage}%! System unlocked advanced deep-dive learning modules.`,
+        reason: `Great score of ${lastAttempt.percentage}%! System unlocked advanced learning challenges.`,
         recommendedDifficulty: "Advanced",
-        estimatedMinutes: 15,
+        estimatedMinutes: 12,
         actionType: "quiz",
         targetQuizId: lastAttempt.quizId,
         urgency: "Low",
@@ -206,17 +242,14 @@ export const storageService = {
   },
 
   getRecommendations() {
-    this.init();
     return JSON.parse(localStorage.getItem(STORAGE_KEYS.RECOMMENDATIONS) || "[]");
   },
 
   getSubjectProgress() {
-    this.init();
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.SUBJECT_PROGRESS) || "[]");
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.SUBJECT_PROGRESS) || JSON.stringify(INITIAL_SUBJECT_PROGRESS));
   },
 
   getActivities() {
-    this.init();
     return JSON.parse(localStorage.getItem(STORAGE_KEYS.ACTIVITIES) || "[]");
   },
 
@@ -236,5 +269,6 @@ export const storageService = {
 
   removeToken() {
     localStorage.removeItem(STORAGE_KEYS.TOKEN);
+    localStorage.removeItem(STORAGE_KEYS.USER);
   }
 };

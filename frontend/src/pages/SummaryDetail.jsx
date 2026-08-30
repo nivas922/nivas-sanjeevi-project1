@@ -13,7 +13,7 @@ import {
   Clock,
   Layers,
   FileCheck2,
-  Share2
+  Sliders
 } from "lucide-react";
 import { useLearning } from "../context/LearningContext";
 import { Button } from "../components/common/Button";
@@ -27,18 +27,22 @@ import { SimplifyModal } from "../components/summary/SimplifyModal";
 import { TranslationModal } from "../components/summary/TranslationModal";
 import { exportService } from "../services/exportService";
 import { useToast } from "../context/ToastContext";
+import { api } from "../services/api";
+import { SUPPORTED_LANGUAGES } from "../data/translations";
 
 export const SummaryDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { summaries, quizzes } = useLearning();
-  const { showSuccess, showInfo } = useToast();
+  const { showSuccess } = useToast();
 
   const [summary, setSummary] = useState(null);
   const [showSimplifyModal, setShowSimplifyModal] = useState(false);
   const [showTranslateModal, setShowTranslateModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [checkedRevision, setCheckedRevision] = useState({});
+  const [quizQuestionCount, setQuizQuestionCount] = useState(5);
+  const [generatingQuiz, setGeneratingQuiz] = useState(false);
 
   useEffect(() => {
     const found = summaries.find((s) => s.id === id) || summaries[0];
@@ -48,7 +52,10 @@ export const SummaryDetail = () => {
   if (!summary) {
     return (
       <div className="text-center py-20">
-        <p className="text-slate-500">Loading summary...</p>
+        <p className="text-slate-500">No summary found. Please upload a textbook to generate summaries.</p>
+        <Button onClick={() => navigate("/upload")} variant="primary" className="mt-4">
+          Upload Textbook
+        </Button>
       </div>
     );
   }
@@ -74,8 +81,25 @@ export const SummaryDetail = () => {
     }));
   };
 
-  // Find matching quiz
-  const matchingQuiz = quizzes.find((q) => q.topic.includes(summary.topic) || q.subject === summary.bookTitle) || quizzes[0];
+  const handleStartCustomQuiz = async () => {
+    setGeneratingQuiz(true);
+    try {
+      const newQuiz = await api.generateQuiz({
+        textbookId: summary.textbookId,
+        summaryId: summary.id,
+        topic: summary.topic,
+        subject: summary.bookTitle,
+        difficulty: summary.difficulty,
+        questionCount: parseInt(quizQuestionCount, 10),
+        language: summary.language || "en"
+      });
+      navigate(`/quiz?id=${newQuiz.id}`);
+    } finally {
+      setGeneratingQuiz(false);
+    }
+  };
+
+  const currentLangObj = SUPPORTED_LANGUAGES.find(l => l.code === (summary.language || "en")) || SUPPORTED_LANGUAGES[0];
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-300 pb-12">
@@ -98,6 +122,9 @@ export const SummaryDetail = () => {
             <Badge variant="brand" size="sm">
               {summary.difficulty || "Intermediate"}
             </Badge>
+            <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-lg border border-purple-200">
+              {currentLangObj.flag} {currentLangObj.name}
+            </span>
           </div>
           <div className="flex items-center gap-3 text-xs text-slate-400 font-medium">
             <span className="flex items-center gap-1">
@@ -121,7 +148,6 @@ export const SummaryDetail = () => {
         {/* Action Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
           <div className="flex flex-wrap items-center gap-2">
-            {/* Simplify Button */}
             <Button
               variant="purple"
               size="sm"
@@ -131,7 +157,6 @@ export const SummaryDetail = () => {
               ✨ Explain Simply
             </Button>
 
-            {/* Translate Button */}
             <Button
               variant="secondary"
               size="sm"
@@ -143,7 +168,6 @@ export const SummaryDetail = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Copy Button */}
             <Button
               variant="outline"
               size="sm"
@@ -153,7 +177,6 @@ export const SummaryDetail = () => {
               {copied ? "Copied" : "Copy"}
             </Button>
 
-            {/* Download Button */}
             <Button
               variant="outline"
               size="sm"
@@ -166,11 +189,11 @@ export const SummaryDetail = () => {
         </div>
       </div>
 
-      {/* Embedded Text-to-Speech Audio Player */}
+      {/* Embedded Multilingual Text-to-Speech Audio Player */}
       <TextToSpeech
-        text={`${summary.topic}. ${summary.summaryText}. Key concepts include: ${summary.keyConcepts.join(". ")}`}
-        title={`Audio Narration: ${summary.topic}`}
-        initialLang="en"
+        text={`${summary.topic}. ${summary.summaryText}. ${summary.simpleExplanation || ""}`}
+        title={`Audio Narration (${currentLangObj.name} - ${currentLangObj.native})`}
+        initialLang={summary.language || "en"}
       />
 
       {/* Main AI Summary Block */}
@@ -178,14 +201,13 @@ export const SummaryDetail = () => {
         <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
           <BookOpen className="w-5 h-5 text-brand-600" />
           <h3 className="text-base font-bold text-slate-900">
-            AI Comprehensive Summary
+            AI Summary ({currentLangObj.name})
           </h3>
         </div>
         <p className="text-sm sm:text-base text-slate-700 leading-relaxed font-normal">
           {summary.summaryText}
         </p>
 
-        {/* Highlighted Intuition Box */}
         {summary.simpleExplanation && (
           <div className="mt-4 p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-start gap-3">
             <span className="text-xl">💡</span>
@@ -276,30 +298,44 @@ export const SummaryDetail = () => {
         </div>
       )}
 
-      {/* Bottom Floating CTA to Quiz */}
-      <div className="bg-gradient-to-r from-brand-900 via-indigo-900 to-purple-900 rounded-3xl p-6 sm:p-8 text-white shadow-soft-lg flex flex-col sm:flex-row items-center justify-between gap-6">
+      {/* Dynamic AI Quiz Generator CTA with Question Count Selector */}
+      <div className="bg-gradient-to-r from-brand-900 via-indigo-900 to-purple-900 rounded-3xl p-6 sm:p-8 text-white shadow-soft-lg flex flex-col md:flex-row items-center justify-between gap-6">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-amber-300 block mb-1">
-            Test Your Understanding
+            Adaptive Knowledge Evaluation
           </span>
           <h3 className="text-xl font-bold">
-            Ready to take the AI Quiz on "{summary.topic}"?
+            Ready to test your knowledge on "{summary.topic}"?
           </h3>
           <p className="text-xs sm:text-sm text-brand-200 mt-1 max-w-md">
-            Evaluate your knowledge retention, identify weak subtopics, and adapt difficulty dynamically.
+            Choose your quiz question count and evaluate your understanding.
           </p>
         </div>
 
-        <Button
-          size="lg"
-          variant="purple"
-          icon={HelpCircle}
-          iconPosition="right"
-          onClick={() => navigate(`/quiz?id=${matchingQuiz?.id || "quiz-1"}`)}
-          className="shrink-0 bg-white text-brand-900 hover:bg-slate-100 font-bold px-8 shadow-soft-md"
-        >
-          Start AI Quiz Now
-        </Button>
+        <div className="flex items-center gap-3 shrink-0">
+          <select
+            value={quizQuestionCount}
+            onChange={(e) => setQuizQuestionCount(parseInt(e.target.value, 10))}
+            className="p-3 bg-white/10 text-white font-bold text-xs sm:text-sm rounded-xl border border-white/20 focus:outline-none"
+          >
+            <option value={5} className="text-slate-900">5 Questions</option>
+            <option value={10} className="text-slate-900">10 Questions</option>
+            <option value={15} className="text-slate-900">15 Questions</option>
+            <option value={20} className="text-slate-900">20 Questions</option>
+          </select>
+
+          <Button
+            size="lg"
+            variant="purple"
+            icon={HelpCircle}
+            iconPosition="right"
+            loading={generatingQuiz}
+            onClick={handleStartCustomQuiz}
+            className="bg-white text-brand-900 hover:bg-slate-100 font-bold px-6 shadow-soft-md"
+          >
+            Start Quiz
+          </Button>
+        </div>
       </div>
 
       {/* Modals */}
