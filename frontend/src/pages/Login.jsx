@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   GraduationCap,
@@ -68,11 +68,21 @@ export const Login = () => {
       return;
     }
     setOtpLoading(true);
+    const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(newOtp);
+
     setTimeout(() => {
       setOtpStep(2);
       setOtpLoading(false);
-      showInfo(`6-Digit OTP code sent to +91 ${phoneNumber} (Use 123456 to verify)`);
+      setResendTimer(30);
+      showSuccess(`SMS delivered! Your verification code is ${newOtp}`);
     }, 600);
+  };
+
+  const handleAutoFillOtp = () => {
+    const digits = generatedOtp.split("");
+    setOtpCode(digits);
+    showSuccess("OTP auto-filled!");
   };
 
   const handleOtpChange = (index, value) => {
@@ -304,6 +314,29 @@ export const Login = () => {
                   <p className="text-xs text-slate-500 mt-0.5">Sent to +91 {phoneNumber}</p>
                 </div>
 
+                {/* SMS Simulation Banner */}
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold flex items-center gap-1.5 text-emerald-800">
+                      <span>📲</span>
+                      <span>Simulated SMS Gateway</span>
+                    </span>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 bg-emerald-200/80 rounded-md text-emerald-900">
+                      Delivered
+                    </span>
+                  </div>
+                  <p className="text-emerald-900 font-medium">
+                    Your verification code is: <strong className="text-sm font-black tracking-widest text-emerald-950 bg-white px-2 py-0.5 rounded border border-emerald-300 ml-1">{generatedOtp}</strong>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleAutoFillOtp}
+                    className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-soft-sm"
+                  >
+                    <span>⚡ One-Click Auto-Fill Code</span>
+                  </button>
+                </div>
+
                 {/* 6 Digits Box */}
                 <div className="flex justify-between gap-2">
                   {otpCode.map((digit, idx) => (
@@ -329,12 +362,22 @@ export const Login = () => {
                   Verify & Sign In
                 </Button>
 
-                <button
-                  onClick={() => setOtpStep(1)}
-                  className="w-full text-center text-xs font-semibold text-slate-500 hover:text-slate-800"
-                >
-                  Change Mobile Number
-                </button>
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setOtpStep(1)}
+                    className="font-semibold text-slate-500 hover:text-slate-800"
+                  >
+                    Change Number
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendOtp}
+                    className="font-bold text-brand-600 hover:text-brand-700"
+                  >
+                    Resend Code
+                  </button>
+                </div>
               </div>
             )}
           </div>
