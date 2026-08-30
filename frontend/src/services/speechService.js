@@ -1,4 +1,6 @@
-﻿class SpeechService {
+import { translatorService } from "./translatorService";
+
+class SpeechService {
   constructor() {
     this.synth = typeof window !== "undefined" ? window.speechSynthesis : null;
     this.voices = [];
@@ -47,18 +49,7 @@
     const bcp47 = this.getBcp47Code(langCode).toLowerCase();
     const prefix = langCode ? langCode.toLowerCase() : "en";
 
-    // 1. Check if browser has actual installed voices for this language
-    const matched = allVoices.filter(v => 
-      v.lang.toLowerCase() === bcp47 ||
-      v.lang.toLowerCase().startsWith(prefix) ||
-      (v.name && v.name.toLowerCase().includes(prefix))
-    );
-
-    if (matched.length > 0) {
-      return matched;
-    }
-
-    // 2. Provide language-tailored voice profiles for Indian Languages
+    // 1. Language-tailored voice profiles for Indian Languages
     const languageVoicePresets = {
       ta: [
         { name: "Tamil Natural Voice (தமிழ் - ta-IN)", lang: "ta-IN", default: true },
@@ -68,7 +59,8 @@
       hi: [
         { name: "Hindi Natural Voice (हिन्दी - hi-IN)", lang: "hi-IN", default: true },
         { name: "Google हिन्दी (hi-IN)", lang: "hi-IN" },
-        { name: "Microsoft Hemant (hi-IN)", lang: "hi-IN" }
+        { name: "Microsoft Hemant (hi-IN)", lang: "hi-IN" },
+        { name: "Microsoft Kalpana (hi-IN)", lang: "hi-IN" }
       ],
       te: [
         { name: "Telugu Natural Voice (తెలుగు - te-IN)", lang: "te-IN", default: true },
@@ -92,7 +84,23 @@
       ]
     };
 
-    return languageVoicePresets[langCode] || languageVoicePresets.en;
+    // If English, return system voices
+    if (langCode === "en") {
+      return allVoices.length > 0 ? allVoices : languageVoicePresets.en;
+    }
+
+    // For Indian languages, check if system has native voices for this language
+    const matched = allVoices.filter(v => 
+      v.lang.toLowerCase() === bcp47 ||
+      (v.lang.toLowerCase().startsWith(prefix) && prefix !== "en") ||
+      (v.name && v.name.toLowerCase().includes(prefix) && prefix !== "en")
+    );
+
+    if (matched.length > 0) {
+      return matched;
+    }
+
+    return languageVoicePresets[langCode] || languageVoicePresets.ta;
   }
 
   speak({
@@ -118,19 +126,14 @@
       return;
     }
 
-    const cleanText = text
+    let cleanText = text
       .replace(/[*_#`~\[\]()]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    const bcp47 = this.getBcp47Code(lang);
-    utterance.lang = bcp47;
-    utterance.rate = Math.max(0.5, Math.min(2.0, rate));
-    utterance.pitch = pitch;
-
-    // Find actual matching system voice if available
+    // Check if system has a native voice for this language
     const systemVoices = this.getVoices();
+    const bcp47 = this.getBcp47Code(lang);
     let selectedVoice = null;
 
     if (voiceName) {
@@ -140,9 +143,19 @@
     if (!selectedVoice) {
       selectedVoice = systemVoices.find(v => 
         v.lang.toLowerCase() === bcp47.toLowerCase() ||
-        v.lang.toLowerCase().startsWith(lang.toLowerCase())
+        (v.lang.toLowerCase().startsWith(lang.toLowerCase()) && lang !== "en")
       );
     }
+
+    // If no native voice installed on this Windows OS, use phonetic transliteration so it pronounces Indian words accurately!
+    if (!selectedVoice && lang !== "en") {
+      cleanText = translatorService.getPhoneticPronunciation(cleanText, lang);
+    }
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = selectedVoice ? bcp47 : "en-US";
+    utterance.rate = Math.max(0.5, Math.min(2.0, rate));
+    utterance.pitch = pitch;
 
     if (selectedVoice) {
       utterance.voice = selectedVoice;

@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -120,25 +120,49 @@ export const Sidebar = ({ isOpen, onClose }) => {
         </div>
 
         {/* Bottom Student Profile */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50/70">
-          <div className="flex items-center justify-between gap-3 p-2 rounded-xl bg-white border border-slate-200/60 shadow-soft-sm">
+        <div className="p-4 border-t border-slate-100 bg-slate-50/70 space-y-2">
+          <div
+            onClick={() => {
+              navigate("/settings");
+              if (onClose) onClose();
+            }}
+            className="flex items-center justify-between gap-3 p-2 rounded-xl bg-white border border-slate-200/60 shadow-soft-sm hover:border-brand-300 hover:shadow-soft-md transition-all cursor-pointer group"
+            title="Click to view & edit Profile"
+          >
             <img
               src={user?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"}
               alt={user?.name || "Student"}
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-brand-100"
+              className="w-10 h-10 rounded-full object-cover ring-2 ring-brand-100 group-hover:ring-brand-500 transition-all"
             />
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-slate-900 truncate">{user?.name || "Student"}</p>
-              <p className="text-[11px] text-slate-500 truncate">{user?.department || user?.role || "Student"}</p>
+              <p className="text-xs font-bold text-slate-900 truncate group-hover:text-brand-600 transition-colors">
+                {user?.name || "Student"}
+              </p>
+              <p className="text-[11px] text-slate-500 truncate">
+                {user?.department || user?.role || "Student"}
+              </p>
             </div>
             <button
-              onClick={handleLogout}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleLogout();
+              }}
               title="Logout"
-              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>
           </div>
+          <button
+            onClick={() => {
+              navigate("/settings");
+              if (onClose) onClose();
+            }}
+            className="w-full py-1.5 px-3 rounded-lg bg-brand-50 hover:bg-brand-100 text-brand-700 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-brand-200/60"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Profile & Account Settings</span>
+          </button>
         </div>
       </aside>
     </>

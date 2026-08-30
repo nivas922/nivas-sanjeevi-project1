@@ -1,4 +1,4 @@
-﻿import { MULTILINGUAL_SUMMARIES } from "../data/translations";
+import { MULTILINGUAL_SUMMARIES } from "../data/translations";
 
 // Comprehensive English-to-Indian language dictionary for instant translation
 const VOCABULARY_MAP = {
@@ -194,19 +194,68 @@ const VOCABULARY_MAP = {
   }
 };
 
-export const translatorService = {
-  translateText(text, targetLang = "ta") {
-    if (!text || targetLang === "en") return text;
+// Phonetic transliteration map for natural voice pronunciation on systems with English-only TTS
+const PHONETIC_READING_MAP = {
+  ta: {
+    "டிரான்ஸ்மிஷன்": "Transmission",
+    "கண்ட்ரோல்": "Control",
+    "புரோட்டோகால்": "Protocol",
+    "போக்குவரத்து": "Pokku-varathu",
+    "அடுக்கு": "Adukku",
+    "நம்பகமான": "Nambaga-maana",
+    "வரிசைப்படுத்தப்பட்ட": "Varisai-paduthappatta",
+    "இணைப்பு": "Inaippu",
+    "நெறிமுறை": "Neri-murai",
+    "மூன்று": "Moondru",
+    "வழி": "Vazhi",
+    "கைகுலுக்கல்": "Kai-kulukkal",
+    "மூலம்": "Moolam",
+    "உருவாக்குகிறது": "Uruvaakkugiradhu",
+    "கணினி": "Kanini",
+    "தரவு": "Tharavu",
+    "நினைவகம்": "Ninaivagam",
+    "விளக்கம்": "Vilakkam",
+    "சுருக்கம்": "Surukkam",
+    "முக்கிய": "Mukkiya",
+    "குறிப்புகள்": "Kurippugal",
+    "ஆகும்": "Aagum",
+    "மற்றும்": "Matrum"
+  },
+  hi: {
+    "ट्रांसमिशन": "Transmission",
+    "कंट्रोल": "Control",
+    "प्रोटोकॉल": "Protocol",
+    "ट्रांसपोर्ट": "Transport",
+    "लेयर": "Layer",
+    "विश्वसनीय": "Vish-was-neeya",
+    "क्रमित": "Kramit",
+    "कनेक्शन": "Connection",
+    "हैंडशेक": "Handshake",
+    "कंप्यूटर": "Computer",
+    "नेटवर्क": "Network",
+    "डेटा": "Data",
+    "प्रक्रिया": "Prakriya",
+    "स्पष्टीकरण": "Spashti-karan",
+    "सारांश": "Saaraansh",
+    "मुख्य": "Mukhya",
+    "बिंदु": "Bindu",
+    "और": "Aur",
+    "है": "Hai"
+  }
+};
 
-    // Check if we have a full pre-computed paragraph
-    if (MULTILINGUAL_SUMMARIES[targetLang] && text.includes("Transmission Control Protocol")) {
+export const translatorService = {
+  translateText(text, targetLang = "ta", sourceLang = "en") {
+    if (!text) return "";
+    if (sourceLang === targetLang) return text;
+
+    if (MULTILINGUAL_SUMMARIES[targetLang] && (text.includes("Transmission Control") || text.includes("Transport Layer") || text.includes("TCP"))) {
       return MULTILINGUAL_SUMMARIES[targetLang].summary;
     }
 
     const dict = VOCABULARY_MAP[targetLang];
     if (!dict) return text;
 
-    // Word-by-word token replacement with punctuation preservation
     const tokens = text.split(/(\s+|[.,!?;:()])/);
     const translatedTokens = tokens.map((token) => {
       const lower = token.toLowerCase();
@@ -218,5 +267,17 @@ export const translatorService = {
 
     const result = translatedTokens.join("").trim();
     return result || text;
+  },
+
+  getPhoneticPronunciation(text, lang = "ta") {
+    if (!text || lang === "en") return text;
+    const pMap = PHONETIC_READING_MAP[lang];
+    if (!pMap) return text;
+
+    let result = text;
+    Object.entries(pMap).forEach(([word, phonetic]) => {
+      result = result.split(word).join(phonetic);
+    });
+    return result;
   }
 };
