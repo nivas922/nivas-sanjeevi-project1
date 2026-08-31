@@ -52,61 +52,90 @@ class SpeechService {
     return map[langCode] || "en-US";
   }
 
+  // Get curated voices for all 7 supported languages grouped together
+  getAllGroupedVoices() {
+    const systemVoices = this.getVoices();
+
+    const grouped = [
+      {
+        langCode: "ta",
+        langName: "Tamil (தமிழ்)",
+        flag: "🇮🇳",
+        voices: [
+          { name: "Tamil Natural Voice (தமிழ் - ta-IN)", lang: "ta-IN", langCode: "ta" },
+          { name: "Google தமிழ் (ta-IN)", lang: "ta-IN", langCode: "ta" },
+          { name: "Microsoft Valluvar (ta-IN)", lang: "ta-IN", langCode: "ta" }
+        ]
+      },
+      {
+        langCode: "hi",
+        langName: "Hindi (हिन्दी)",
+        flag: "🇮🇳",
+        voices: [
+          { name: "Hindi Natural Voice (हिन्दी - hi-IN)", lang: "hi-IN", langCode: "hi" },
+          { name: "Google हिन्दी (hi-IN)", lang: "hi-IN", langCode: "hi" },
+          { name: "Microsoft Hemant (hi-IN)", lang: "hi-IN", langCode: "hi" }
+        ]
+      },
+      {
+        langCode: "te",
+        langName: "Telugu (తెలుగు)",
+        flag: "🇮🇳",
+        voices: [
+          { name: "Telugu Natural Voice (తెలుగు - te-IN)", lang: "te-IN", langCode: "te" },
+          { name: "Microsoft Mohan (te-IN)", lang: "te-IN", langCode: "te" }
+        ]
+      },
+      {
+        langCode: "kn",
+        langName: "Kannada (ಕನ್ನಡ)",
+        flag: "🇮🇳",
+        voices: [
+          { name: "Kannada Natural Voice (ಕನ್ನಡ - kn-IN)", lang: "kn-IN", langCode: "kn" },
+          { name: "Microsoft Gagan (kn-IN)", lang: "kn-IN", langCode: "kn" }
+        ]
+      },
+      {
+        langCode: "ml",
+        langName: "Malayalam (മലയാളം)",
+        flag: "🇮🇳",
+        voices: [
+          { name: "Malayalam Natural Voice (മലയാളം - ml-IN)", lang: "ml-IN", langCode: "ml" },
+          { name: "Microsoft Midhun (ml-IN)", lang: "ml-IN", langCode: "ml" }
+        ]
+      },
+      {
+        langCode: "bn",
+        langName: "Bengali (বাংলা)",
+        flag: "🇮🇳",
+        voices: [
+          { name: "Bengali Natural Voice (বাংলা - bn-IN)", lang: "bn-IN", langCode: "bn" },
+          { name: "Microsoft Bashkar (bn-IN)", lang: "bn-IN", langCode: "bn" }
+        ]
+      },
+      {
+        langCode: "en",
+        langName: "English (English)",
+        flag: "🇬🇧",
+        voices: [
+          { name: "English Natural Voice (en-US)", lang: "en-US", langCode: "en" },
+          { name: "English Indian Accent (en-IN)", lang: "en-IN", langCode: "en" },
+          ...(systemVoices.length > 0 ? systemVoices.map(v => ({ name: v.name, lang: v.lang, langCode: "en" })) : [])
+        ]
+      }
+    ];
+
+    return grouped;
+  }
+
   // Get curated or browser voices matching the target language
   getVoicesForLanguage(langCode) {
-    const allVoices = this.getVoices();
-    const bcp47 = this.getBcp47Code(langCode).toLowerCase();
-    const prefix = langCode ? langCode.toLowerCase() : "en";
-
-    // Standard presets for Indian languages
-    const languageVoicePresets = {
-      ta: [
-        { name: "Tamil Natural Voice (தமிழ் - ta-IN)", lang: "ta-IN", default: true },
-        { name: "Google தமிழ் (ta-IN)", lang: "ta-IN" },
-        { name: "Microsoft Valluvar (ta-IN)", lang: "ta-IN" }
-      ],
-      hi: [
-        { name: "Hindi Natural Voice (हिन्दी - hi-IN)", lang: "hi-IN", default: true },
-        { name: "Google हिन्दी (hi-IN)", lang: "hi-IN" },
-        { name: "Microsoft Hemant (hi-IN)", lang: "hi-IN" }
-      ],
-      te: [
-        { name: "Telugu Natural Voice (తెలుగు - te-IN)", lang: "te-IN", default: true },
-        { name: "Microsoft Mohan (te-IN)", lang: "te-IN" }
-      ],
-      kn: [
-        { name: "Kannada Natural Voice (ಕನ್ನಡ - kn-IN)", lang: "kn-IN", default: true },
-        { name: "Microsoft Gagan (kn-IN)", lang: "kn-IN" }
-      ],
-      ml: [
-        { name: "Malayalam Natural Voice (മലയാളം - ml-IN)", lang: "ml-IN", default: true },
-        { name: "Microsoft Midhun (ml-IN)", lang: "ml-IN" }
-      ],
-      bn: [
-        { name: "Bengali Natural Voice (বাংলা - bn-IN)", lang: "bn-IN", default: true },
-        { name: "Microsoft Bashkar (bn-IN)", lang: "bn-IN" }
-      ],
-      en: allVoices.length > 0 ? allVoices : [
-        { name: "English Natural Voice (en-US)", lang: "en-US", default: true },
-        { name: "English Indian Accent (en-IN)", lang: "en-IN" }
-      ]
-    };
-
-    if (langCode === "en") {
-      return allVoices.length > 0 ? allVoices : languageVoicePresets.en;
+    const allGrouped = this.getAllGroupedVoices();
+    const targetGroup = allGrouped.find(g => g.langCode === langCode);
+    if (targetGroup && targetGroup.voices.length > 0) {
+      return targetGroup.voices;
     }
-
-    const matched = allVoices.filter(v => 
-      v.lang.toLowerCase() === bcp47 ||
-      (v.lang.toLowerCase().startsWith(prefix) && prefix !== "en") ||
-      (v.name && v.name.toLowerCase().includes(prefix) && prefix !== "en")
-    );
-
-    if (matched.length > 0) {
-      return matched;
-    }
-
-    return languageVoicePresets[langCode] || languageVoicePresets.ta;
+    return allGrouped[0].voices;
   }
 
   // Fallback Audio Tone Synthesizer for when SpeechSynthesis is unavailable
