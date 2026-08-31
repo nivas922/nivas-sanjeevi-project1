@@ -7,6 +7,7 @@ class SpeechService {
     this.currentUtterance = null;
     this.isSpeaking = false;
     this.isPaused = false;
+    this.heartbeatTimer = null;
     this.initVoices();
   }
 
@@ -14,7 +15,11 @@ class SpeechService {
     if (!this.synth) return;
 
     const updateVoices = () => {
-      this.voices = this.synth.getVoices();
+      try {
+        this.voices = this.synth.getVoices();
+      } catch (e) {
+        console.warn("Could not get speech voices:", e);
+      }
     };
 
     updateVoices();
@@ -25,7 +30,11 @@ class SpeechService {
 
   getVoices() {
     if (this.synth && (!this.voices || this.voices.length === 0)) {
-      this.voices = this.synth.getVoices();
+      try {
+        this.voices = this.synth.getVoices();
+      } catch (e) {
+        this.voices = [];
+      }
     }
     return this.voices || [];
   }
@@ -49,7 +58,7 @@ class SpeechService {
     const bcp47 = this.getBcp47Code(langCode).toLowerCase();
     const prefix = langCode ? langCode.toLowerCase() : "en";
 
-    // 1. Language-tailored voice profiles for Indian Languages
+    // Standard presets for Indian languages
     const languageVoicePresets = {
       ta: [
         { name: "Tamil Natural Voice (தமிழ் - ta-IN)", lang: "ta-IN", default: true },
@@ -59,8 +68,7 @@ class SpeechService {
       hi: [
         { name: "Hindi Natural Voice (हिन्दी - hi-IN)", lang: "hi-IN", default: true },
         { name: "Google हिन्दी (hi-IN)", lang: "hi-IN" },
-        { name: "Microsoft Hemant (hi-IN)", lang: "hi-IN" },
-        { name: "Microsoft Kalpana (hi-IN)", lang: "hi-IN" }
+        { name: "Microsoft Hemant (hi-IN)", lang: "hi-IN" }
       ],
       te: [
         { name: "Telugu Natural Voice (తెలుగు - te-IN)", lang: "te-IN", default: true },
@@ -84,12 +92,10 @@ class SpeechService {
       ]
     };
 
-    // If English, return system voices
     if (langCode === "en") {
       return allVoices.length > 0 ? allVoices : languageVoicePresets.en;
     }
 
-    // For Indian languages, check if system has native voices for this language
     const matched = allVoices.filter(v => 
       v.lang.toLowerCase() === bcp47 ||
       (v.lang.toLowerCase().startsWith(prefix) && prefix !== "en") ||
@@ -101,6 +107,27 @@ class SpeechService {
     }
 
     return languageVoicePresets[langCode] || languageVoicePresets.ta;
+  }
+
+  // Fallback Audio Tone Synthesizer for when SpeechSynthesis is unavailable
+  playAudioBeep(freq = 440, duration = 0.15) {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration);
+    } catch (e) {
+      // Ignore audio context restriction
+    }
   }
 
   speak({
@@ -115,23 +142,26 @@ class SpeechService {
     onResume = () => {},
     onError = () => {}
   }) {
-    if (!this.synth) {
-      onError(new Error("SpeechSynthesis is not supported in this browser."));
-      return;
-    }
-
-    this.stop();
-
     if (!text || text.trim().length === 0) {
       return;
     }
 
+    // Safety cleanup
+    this.stop();
+
+    if (!this.synth) {
+      this.playAudioBeep(520, 0.2);
+      onError(new Error("Speech synthesis not supported in this browser."));
+      return;
+    }
+
+    // Clean text of markdown formatting
     let cleanText = text
       .replace(/[*_#`~\[\]()]/g, " ")
+      .replace(/[\n\r]+/g, ". ")
       .replace(/\s+/g, " ")
       .trim();
 
-    // Check if system has a native voice for this language
     const systemVoices = this.getVoices();
     const bcp47 = this.getBcp47Code(lang);
     let selectedVoice = null;
@@ -147,52 +177,83 @@ class SpeechService {
       );
     }
 
-    // If no native voice installed on this Windows OS, use phonetic transliteration so it pronounces Indian words accurately!
+    // If Indian language has no native TTS voice installed on this Windows OS, use phonetic pronunciation
     if (!selectedVoice && lang !== "en") {
       cleanText = translatorService.getPhoneticPronunciation(cleanText, lang);
     }
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = selectedVoice ? bcp47 : "en-US";
-    utterance.rate = Math.max(0.5, Math.min(2.0, rate));
-    utterance.pitch = pitch;
-
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
+    // Unfreeze synthesis queue on Chromium
+    if (this.synth.paused) {
+      this.synth.resume();
     }
+    this.synth.cancel();
 
-    utterance.onstart = () => {
-      this.isSpeaking = true;
-      this.isPaused = false;
-      onStart();
-    };
+    try {
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = selectedVoice ? bcp47 : "en-US";
+      utterance.rate = Math.max(0.5, Math.min(2.0, rate));
+      utterance.pitch = Math.max(0.5, Math.min(1.5, pitch));
 
-    utterance.onend = () => {
-      this.isSpeaking = false;
-      this.isPaused = false;
-      this.currentUtterance = null;
-      onEnd();
-    };
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
 
-    utterance.onpause = () => {
-      this.isPaused = true;
-      onPause();
-    };
+      utterance.onstart = () => {
+        this.isSpeaking = true;
+        this.isPaused = false;
+        onStart();
+        // Keep speech alive in Chrome for longer paragraphs
+        clearInterval(this.heartbeatTimer);
+        this.heartbeatTimer = setInterval(() => {
+          if (this.synth && this.synth.speaking && !this.synth.paused) {
+            this.synth.pause();
+            this.synth.resume();
+          } else {
+            clearInterval(this.heartbeatTimer);
+          }
+        }, 8000);
+      };
 
-    utterance.onresume = () => {
-      this.isPaused = false;
-      onResume();
-    };
+      utterance.onend = () => {
+        this.isSpeaking = false;
+        this.isPaused = false;
+        this.currentUtterance = null;
+        clearInterval(this.heartbeatTimer);
+        onEnd();
+      };
 
-    utterance.onerror = (err) => {
-      this.isSpeaking = false;
-      this.isPaused = false;
-      this.currentUtterance = null;
+      utterance.onpause = () => {
+        this.isPaused = true;
+        onPause();
+      };
+
+      utterance.onresume = () => {
+        this.isPaused = false;
+        onResume();
+      };
+
+      utterance.onerror = (err) => {
+        console.warn("SpeechSynthesis error:", err);
+        this.isSpeaking = false;
+        this.isPaused = false;
+        this.currentUtterance = null;
+        clearInterval(this.heartbeatTimer);
+        onError(err);
+      };
+
+      // Critical Fix: Bind globally to window to prevent V8 Garbage Collection!
+      this.currentUtterance = utterance;
+      if (typeof window !== "undefined") {
+        window.__learnAiActiveUtterance = utterance;
+      }
+
+      this.synth.speak(utterance);
+
+    } catch (err) {
+      console.error("Speech initiation error:", err);
+      this.playAudioBeep(440, 0.2);
       onError(err);
-    };
-
-    this.currentUtterance = utterance;
-    this.synth.speak(utterance);
+    }
   }
 
   pause() {
@@ -210,8 +271,13 @@ class SpeechService {
   }
 
   stop() {
+    clearInterval(this.heartbeatTimer);
     if (this.synth) {
-      this.synth.cancel();
+      try {
+        this.synth.cancel();
+      } catch (e) {
+        // ignore
+      }
       this.isSpeaking = false;
       this.isPaused = false;
       this.currentUtterance = null;

@@ -1,7 +1,8 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Navbar } from "./Navbar";
+import { FloatingDoubtSolver } from "../chat/FloatingDoubtSolver";
 
 export const AppLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -19,6 +20,9 @@ export const AppLayout = () => {
           <Outlet />
         </main>
       </div>
+
+      {/* Global Floating AI Doubt Solver Drawer */}
+      <FloatingDoubtSolver />
     </div>
   );
 };

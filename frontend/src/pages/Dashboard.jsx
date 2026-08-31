@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BookOpen,
@@ -134,10 +134,10 @@ export const Dashboard = () => {
               </div>
               {subjectProgress.length > 0 && (
                 <button
-                  onClick={() => navigate("/progress")}
+                  onClick={() => navigate("/doubts")}
                   className="text-xs font-bold text-brand-600 hover:text-brand-700 flex items-center gap-1"
                 >
-                  <span>Full Analytics</span>
+                  <span>Ask Doubts (AI Tutor)</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               )}

@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ToastProvider } from "./context/ToastContext";
@@ -13,7 +13,7 @@ import { SummaryDetail } from "./pages/SummaryDetail";
 import { TextToSpeechPage } from "./pages/TextToSpeechPage";
 import { AIQuiz } from "./pages/AIQuiz";
 import { QuizResults } from "./pages/QuizResults";
-import { ProgressAnalytics } from "./pages/ProgressAnalytics";
+import { ClearDoubtsPage } from "./pages/ClearDoubtsPage";
 import { AIRecommendations } from "./pages/AIRecommendations";
 import { Settings } from "./pages/Settings";
 import { Login } from "./pages/Login";
@@ -68,7 +68,7 @@ function App() {
                 <Route path="tts" element={<TextToSpeechPage />} />
                 <Route path="quiz" element={<AIQuiz />} />
                 <Route path="quiz/results" element={<QuizResults />} />
-                <Route path="progress" element={<ProgressAnalytics />} />
+                <Route path="doubts" element={<ClearDoubtsPage />} />
                 <Route path="recommendations" element={<AIRecommendations />} />
                 <Route path="settings" element={<Settings />} />
               </Route>
