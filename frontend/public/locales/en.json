@@ -1,0 +1,19 @@
+﻿{
+  "app_title": "LearnAI",
+  "tagline": "AI Multilingual Textbook Summarization & Adaptive Learning",
+  "nav": {
+    "dashboard": "Dashboard",
+    "upload": "Upload Textbook",
+    "summaries": "My Summaries",
+    "tts": "Text to Speech",
+    "quiz": "AI Quiz",
+    "progress": "Analytics",
+    "profile": "Profile & Settings"
+  },
+  "auth": {
+    "sign_in": "Sign In",
+    "sign_in_google": "Sign in with Google",
+    "sign_in_mobile": "Sign in with Mobile OTP",
+    "sign_out": "Sign Out"
+  }
+}
