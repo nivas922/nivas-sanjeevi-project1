@@ -1,5 +1,5 @@
-﻿[build]
-  command = "npm run build"
+[build]
+  command = "node build.js"
   publish = "dist"
 
 [[redirects]]
