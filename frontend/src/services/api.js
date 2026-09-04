@@ -1,13 +1,40 @@
-import { storageService } from "./storageService";
+﻿import { storageService } from "./storageService";
 import { MULTILINGUAL_SUMMARIES, SUPPORTED_LANGUAGES, DEPARTMENTS } from "../data/translations";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+const getAuthHeaders = () => {
+  const token = storageService.getToken();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  };
+};
+
 export const api = {
   // Authentication & Registration
   async register(userData) {
-    await sleep(400);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: userData.name || "Student",
+          email: userData.email || "student@university.edu",
+          department: userData.department || DEPARTMENTS[0]
+        })
+      });
+      const data = await res.json();
+      if (data.token && data.user) {
+        storageService.setToken(data.token);
+        storageService.initNewUser(data.user);
+        return { status: "success", user: data.user, token: data.token };
+      }
+    } catch (err) {
+      console.warn("Backend API call failed, using fallback:", err.message);
+    }
+
     const freshUser = storageService.initNewUser({
       name: userData.name || "Student",
       email: userData.email || "student@university.edu",
@@ -17,7 +44,26 @@ export const api = {
   },
 
   async login(credentials) {
-    await sleep(400);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: credentials.email ? credentials.email.split("@")[0] : "Student",
+          email: credentials.email || "student@university.edu",
+          department: DEPARTMENTS[0]
+        })
+      });
+      const data = await res.json();
+      if (data.token && data.user) {
+        storageService.setToken(data.token);
+        storageService.initNewUser(data.user);
+        return { status: "success", user: data.user, token: data.token };
+      }
+    } catch (err) {
+      console.warn("Backend API call failed, using fallback:", err.message);
+    }
+
     let user = storageService.getUser();
     if (!user) {
       user = storageService.initNewUser({
@@ -30,21 +76,76 @@ export const api = {
   },
 
   async loginWithGoogle(accountData = {}) {
-    await sleep(300);
-    const randomId = Math.floor(Math.random() * 899) + 100;
     const name = accountData.name || "NIVAS M";
     const email = accountData.email || "nivasm.it24@bitsathy.ac.in";
+    const avatar = accountData.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=google_${encodeURIComponent(name)}`;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          email,
+          avatar,
+          department: accountData.department || DEPARTMENTS[0]
+        })
+      });
+      const data = await res.json();
+      if (data.token && data.user) {
+        storageService.setToken(data.token);
+        storageService.initNewUser(data.user);
+        return { status: "success", user: data.user, token: data.token };
+      }
+    } catch (err) {
+      console.warn("Backend Google login call notice:", err.message);
+    }
+
     const googleUser = storageService.initNewUser({
-      name: name,
-      email: email,
+      name,
+      email,
       department: accountData.department || DEPARTMENTS[0],
-      avatar: accountData.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=google_${encodeURIComponent(name)}`
+      avatar
     });
     return { status: "success", user: googleUser, token: "google_token_" + Date.now() };
   },
 
+  async sendMobileOtp(phoneNumber) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/mobile/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile: phoneNumber })
+      });
+      const data = await res.json();
+      return data;
+    } catch (err) {
+      console.warn("Send OTP backend notice:", err.message);
+      return { success: true, message: "OTP simulated" };
+    }
+  },
+
   async loginWithMobile(phoneNumber, otp) {
-    await sleep(500);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/mobile/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mobile: phoneNumber,
+          otp,
+          department: DEPARTMENTS[0]
+        })
+      });
+      const data = await res.json();
+      if (data.token && data.user) {
+        storageService.setToken(data.token);
+        storageService.initNewUser(data.user);
+        return { status: "success", user: data.user, token: data.token };
+      }
+    } catch (err) {
+      console.warn("Backend verify OTP notice:", err.message);
+    }
+
     const mobileUser = storageService.initNewUser({
       name: `Student (${phoneNumber.slice(-4)})`,
       email: `user.${phoneNumber.slice(-4)}@mobile.edu`,
@@ -55,10 +156,46 @@ export const api = {
   },
 
   async getProfile() {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/me`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          storageService.updateUser(data.user);
+          return { status: "success", user: data.user };
+        }
+      }
+    } catch (err) {
+      console.warn("Profile fetch notice:", err.message);
+    }
+
     let user = storageService.getUser();
     if (!user) {
       user = storageService.initNewUser();
     }
+    return { status: "success", user };
+  },
+
+  async updateProfile(profileData) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/profile`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(profileData)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          storageService.updateUser(data.user);
+          return { status: "success", user: data.user };
+        }
+      }
+    } catch (err) {
+      console.warn("Update profile API notice:", err.message);
+    }
+    const user = storageService.updateUser(profileData);
     return { status: "success", user };
   },
 
@@ -67,7 +204,7 @@ export const api = {
     const isScanned = file.name.endsWith(".png") || file.name.endsWith(".jpg") || file.name.endsWith(".jpeg");
     const stages = [
       { step: 1, label: "Uploading document...", percent: 15 },
-      { step: 2, label: isScanned ? "Scanned document detected. Extracting text using Tesseract OCR..." : "Extracting selectable text with PyMuPDF...", percent: 30 },
+      { step: 2, label: isScanned ? "Scanned document detected. Extracting text using OCR..." : "Extracting selectable text with PyMuPDF...", percent: 30 },
       { step: 3, label: "Detecting chapters and structural hierarchy...", percent: 45 },
       { step: 4, label: "Analyzing key formulas, definitions and topics...", percent: 60 },
       { step: 5, label: `Generating AI summarization in ${metadata.targetLanguageName || "selected language"}...`, percent: 75 },
@@ -77,22 +214,82 @@ export const api = {
     ];
 
     for (const stage of stages) {
-      await sleep(350);
+      await sleep(250);
       onProgress(stage);
     }
 
-    const newId = "tb-" + Date.now();
     const cleanTitle = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+    const formattedTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
     const langCode = metadata.targetLanguage || "en";
+    const questionCount = parseInt(metadata.questionCount || 5, 10);
 
-    const newBook = {
+    let backendBook = null;
+    let backendSummary = null;
+    let backendQuiz = null;
+
+    // Call Backend Upload & Summarize APIs
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", formattedTitle);
+      formData.append("subject", metadata.subject || formattedTitle);
+
+      const token = storageService.getToken();
+      const uploadRes = await fetch(`${API_BASE_URL}/upload-book`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData
+      });
+
+      if (uploadRes.ok) {
+        const uploadData = await uploadRes.json();
+        backendBook = uploadData.book;
+
+        // Call /summarize with target_language
+        const sumRes = await fetch(`${API_BASE_URL}/summarize`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            book_id: uploadData.book_id,
+            target_language: langCode
+          })
+        });
+
+        if (sumRes.ok) {
+          const sumData = await sumRes.json();
+          backendSummary = sumData.summary;
+        }
+
+        // Call /generate-quiz
+        const quizRes = await fetch(`${API_BASE_URL}/generate-quiz`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            book_id: uploadData.book_id,
+            num_questions: questionCount,
+            language: langCode
+          })
+        });
+
+        if (quizRes.ok) {
+          const quizData = await quizRes.json();
+          backendQuiz = quizData.quiz;
+        }
+      }
+    } catch (backendErr) {
+      console.warn("Backend processing pipeline notice:", backendErr.message);
+    }
+
+    const newId = backendBook ? backendBook.id : "tb-" + Date.now();
+
+    const newBook = backendBook || {
       id: newId,
-      title: cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1),
+      title: formattedTitle,
       author: metadata.author || "Uploaded Academic Textbook",
       coverUrl: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&auto=format&fit=crop&q=80",
       subject: metadata.subject || cleanTitle,
       category: "Academic",
-      pages: Math.floor(Math.random() * 80) + 25,
+      pages: 45,
       chaptersCount: 4,
       progress: 0,
       status: "In Progress",
@@ -109,10 +306,16 @@ export const api = {
 
     storageService.addTextbook(newBook);
 
-    // Multilingual summary payload matching selected language
     const langSummaryTemplate = MULTILINGUAL_SUMMARIES[langCode] || MULTILINGUAL_SUMMARIES.en;
 
-    const newSummary = {
+    const newSummary = backendSummary ? {
+      ...backendSummary,
+      textbookId: newId,
+      bookTitle: newBook.title,
+      topic: `${newBook.title} - Fundamentals`,
+      readTime: "5 min read",
+      translations: MULTILINGUAL_SUMMARIES
+    } : {
       id: "sum-" + Date.now(),
       textbookId: newId,
       bookTitle: newBook.title,
@@ -148,9 +351,7 @@ export const api = {
 
     storageService.addSummary(newSummary);
 
-    // Generate dynamic quiz with selected question count (5, 10, 15, 20)
-    const questionCount = parseInt(metadata.questionCount || 5, 10);
-    const newQuiz = await this.generateQuiz({
+    const newQuiz = backendQuiz || await this.generateQuiz({
       textbookId: newId,
       summaryId: newSummary.id,
       topic: newSummary.topic,
@@ -165,6 +366,27 @@ export const api = {
 
   // Dynamic Quiz Generator (Supports 5, 10, 15, 20 questions)
   async generateQuiz({ textbookId, summaryId, topic, subject, difficulty = "Intermediate", questionCount = 5, language = "en" }) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/generate-quiz`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          book_id: textbookId,
+          num_questions: questionCount,
+          language
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.quiz) {
+          storageService.addQuiz(data.quiz);
+          return data.quiz;
+        }
+      }
+    } catch (err) {
+      console.warn("Backend generateQuiz notice:", err.message);
+    }
+
     const totalQ = Math.max(3, Math.min(25, questionCount));
     const questionPool = [
       {
@@ -196,100 +418,9 @@ export const api = {
         opts: ["Code reusability, testability, and isolated failure domains", "Guaranteed 100% CPU utilization", "Elimination of binary compilers", "Infinite network throughput"],
         correct: 0,
         exp: "Modularity isolates faults and enables independent component verification."
-      },
-      {
-        q: "Which metric primarily determines the throughput capacity of a data pipeline?",
-        opts: ["The slowest bottleneck stage", "The fastest processor clock", "Disk sector size", "Monitor refresh rate"],
-        correct: 0,
-        exp: "Overall pipeline throughput is constrained by the maximum latency of its slowest stage."
-      },
-      {
-        q: "What occurs during an error detection checksum mismatch?",
-        opts: ["Packet discard and retransmission request", "Immediate CPU power down", "System disk wipe", "Automatic speed increase"],
-        correct: 0,
-        exp: "Corrupted checksums trigger selective discard and protocol retransmission."
-      },
-      {
-        q: "Why is data encapsulation essential for security and integrity?",
-        opts: ["It hides internal state and restricts unauthorized direct manipulation", "It reduces file download sizes", "It compiles bytecode into machine code", "It translates text into audio"],
-        correct: 0,
-        exp: "Encapsulation prevents external bypass of internal invariant validations."
-      },
-      {
-        q: "Which algorithm ensures equitable resource allocation without starvation?",
-        opts: ["Round Robin & Fair Queuing", "First In Never Out", "Random Drop", "Shortest Job First only"],
-        correct: 0,
-        exp: "Round-robin scheduling grants bounded wait times to all active processes."
-      },
-      {
-        q: "What is the primary benefit of exponential backoff during network congestion?",
-        opts: ["Prevents packet collision storms by spacing retries", "Increases packet size", "Encrypts payloads", "Bypasses firewalls"],
-        correct: 0,
-        exp: "Exponential backoff allows congested channels time to clear before retrying."
-      },
-      {
-        q: "What is the fundamental difference between synchronous and asynchronous operations?",
-        opts: ["Synchronous blocks until completion; Asynchronous permits concurrent progress", "Asynchronous is always single-threaded", "Synchronous cannot handle integers", "There is no difference"],
-        correct: 0,
-        exp: "Synchronous calls block execution, while asynchronous models yield control."
-      },
-      {
-        q: "How does caching improve overall response latency?",
-        opts: ["Stores frequently accessed data in fast local memory", "Compresses audio files", "Increases network wire length", "Deletes obsolete records"],
-        correct: 0,
-        exp: "Caches eliminate expensive round-trip queries to backing storage."
-      },
-      {
-        q: "What is the function of an idempotent API operation?",
-        opts: ["Multiple identical requests produce the same outcome as a single request", "It can only run once in a lifetime", "It deletes database tables", "It generates random passwords"],
-        correct: 0,
-        exp: "Idempotence ensures safe retries without unintended side effects."
-      },
-      {
-        q: "Which principle dictates that software entities should be open for extension but closed for modification?",
-        opts: ["Open/Closed Principle (OCP)", "Single Responsibility", "Liskov Substitution", "Dependency Inversion"],
-        correct: 0,
-        exp: "OCP allows adding new functionality without altering existing tested code."
-      },
-      {
-        q: "What is the primary purpose of database normalization?",
-        opts: ["Eliminate redundant data and maintain referential integrity", "Increase duplicate rows", "Slow down SELECT queries", "Convert SQL to NoSQL"],
-        correct: 0,
-        exp: "Normalization organizes schemas to prevent update anomalies and storage waste."
-      },
-      {
-        q: "In distributed consensus, what problem does the Raft or Paxos protocol solve?",
-        opts: ["Agreement among multiple nodes in the presence of network partitions", "GPU overclocking", "Text-to-speech conversion", "Image compression"],
-        correct: 0,
-        exp: "Consensus algorithms ensure replicated state consistency across distributed clusters."
-      },
-      {
-        q: "What does the ACID acronym stand for in transaction processing?",
-        opts: ["Atomicity, Consistency, Isolation, Durability", "Accuracy, Control, Integration, Design", "Async, Concurrent, Indexed, Distributed", "None of the above"],
-        correct: 0,
-        exp: "ACID guarantees transactional correctness in relational databases."
-      },
-      {
-        q: "How does virtual memory paging protect processes from interfering with each other?",
-        opts: ["Provides each process an isolated virtual address space mapped to physical frames", "Encrypts all RAM chips with AES", "Runs each process on separate hardware", "Disables memory writes"],
-        correct: 0,
-        exp: "Virtual memory mapping isolates address spaces, preventing unauthorized memory access."
-      },
-      {
-        q: "What is the role of a reverse proxy in web infrastructure?",
-        opts: ["Load balancing, TLS termination, and request routing", "Client-side image editing", "Compiling JavaScript", "Generating passwords"],
-        correct: 0,
-        exp: "Reverse proxies manage upstream traffic distribution and SSL termination."
-      },
-      {
-        q: "Why are cryptographic hash functions designed to be one-way?",
-        opts: ["Computationally infeasible to derive the input from the hash digest", "To make files larger", "To double CPU clock speeds", "To allow easy decryption"],
-        correct: 0,
-        exp: "One-way hash functions secure passwords and ensure tamper-evident signatures."
       }
     ];
 
-    // Pick exactly N questions
     const selectedQuestions = questionPool.slice(0, totalQ).map((item, idx) => ({
       id: `q-${Date.now()}-${idx + 1}`,
       question: item.q,
@@ -326,10 +457,21 @@ export const api = {
   },
 
   async translateSummary(summaryId, targetLang) {
-    await sleep(400);
-    const summary = storageService.getSummaryById(summaryId);
-    const translation = MULTILINGUAL_SUMMARIES[targetLang] || MULTILINGUAL_SUMMARIES.en;
+    try {
+      const res = await fetch(`${API_BASE_URL}/summaries/${summaryId}/translate`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ target_language: targetLang })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data;
+      }
+    } catch (err) {
+      console.warn("Translate summary API notice:", err.message);
+    }
 
+    const translation = MULTILINGUAL_SUMMARIES[targetLang] || MULTILINGUAL_SUMMARIES.en;
     return {
       status: "success",
       language: targetLang,
@@ -341,11 +483,55 @@ export const api = {
     };
   },
 
+  async textToSpeech(text, language = "en") {
+    try {
+      const res = await fetch(`${API_BASE_URL}/text-to-speech`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ text, language })
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn("TTS API notice:", err.message);
+    }
+    return { status: "fallback" };
+  },
+
   async submitQuiz(submission) {
-    await sleep(500);
+    try {
+      const res = await fetch(`${API_BASE_URL}/submit-quiz`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          quiz_id: submission.quizId,
+          answers: submission.selectedAnswers
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Also save to local storage for instant offline UI responsiveness
+        storageService.saveQuizAttempt({
+          id: "attempt-" + Date.now(),
+          quizId: submission.quizId,
+          score: data.score,
+          totalQuestions: data.totalQuestions,
+          percentage: data.percentage,
+          performanceLevel: data.performanceLevel,
+          answers: data.reviewedAnswers || data.answers,
+          recommendedTopic: data.recommendedTopic,
+          recommendationDifficulty: data.recommendationDifficulty
+        });
+        return data;
+      }
+    } catch (err) {
+      console.warn("Submit quiz backend notice:", err.message);
+    }
+
     const quiz = storageService.getQuizById(submission.quizId);
     if (!quiz) throw new Error("Quiz not found");
-    
+
     let correctCount = 0;
     const reviewedAnswers = quiz.questions.map((q) => {
       const userSelected = submission.selectedAnswers[q.id];
@@ -393,13 +579,58 @@ export const api = {
   },
 
   async getRecommendations() {
-    await sleep(200);
+    const user = storageService.getUser();
+    if (user && user.id) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/recommendations/${user.id}`, {
+          headers: getAuthHeaders()
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.recommendations) {
+            return data.recommendations;
+          }
+        }
+      } catch (err) {
+        console.warn("Recommendations API notice:", err.message);
+      }
+    }
     return storageService.getRecommendations();
   },
 
   async getAnalytics() {
-    await sleep(200);
     const user = storageService.getUser() || storageService.initNewUser();
+    if (user && user.id) {
+      try {
+        const [progRes, actRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/progress/${user.id}`, { headers: getAuthHeaders() }),
+          fetch(`${API_BASE_URL}/activity/${user.id}`, { headers: getAuthHeaders() })
+        ]);
+
+        if (progRes.ok) {
+          const progData = await progRes.json();
+          const actData = actRes.ok ? await actRes.json() : { activities: [] };
+
+          return {
+            user,
+            stats: {
+              booksStudied: progData.stats.booksStudied || 0,
+              summariesGenerated: progData.stats.summariesGenerated || 0,
+              quizzesCompleted: progData.stats.quizzesCompleted || 0,
+              averageScore: progData.stats.averageScore || 0,
+              streakDays: user.streakDays || 0,
+              totalStudyHours: user.totalStudyHours || 0
+            },
+            subjectProgress: progData.subjectProgress || [],
+            activities: actData.activities || [],
+            quizHistory: storageService.getQuizAttempts()
+          };
+        }
+      } catch (err) {
+        console.warn("Analytics API notice:", err.message);
+      }
+    }
+
     const attempts = storageService.getQuizAttempts();
     const textbooks = storageService.getTextbooks();
     const summaries = storageService.getSummaries();
