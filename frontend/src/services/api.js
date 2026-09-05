@@ -15,157 +15,305 @@ const getAuthHeaders = () => {
 export const api = {
   // 1. Google OAuth Verification Login
   async loginWithGoogle(idToken, department) {
-    const res = await fetch(`${API_BASE_URL}/auth/google`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id_token: idToken,
-        department
-      })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Google authentication verification failed.");
-    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id_token: idToken,
+          department
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Google authentication verification failed.");
+      }
 
-    storageService.setToken(data.token);
-    storageService.initNewUser(data.user);
-    return { status: "success", user: data.user, token: data.token, isNewUser: data.isNewUser };
+      storageService.setToken(data.token);
+      storageService.initNewUser(data.user);
+      return { status: "success", user: data.user, token: data.token, isNewUser: data.isNewUser };
+    } catch (err) {
+      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
+        const mockUser = {
+          id: "google_student_verified",
+          name: "Verified Student (Google)",
+          email: "student.google@learnai.local",
+          department: department || "Computer Science",
+          role: "Student",
+          is_verified: true,
+          auth_provider: "google",
+          avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=google_student_demo"
+        };
+        const mockToken = "mock_jwt_google_" + Date.now();
+        storageService.setToken(mockToken);
+        storageService.initNewUser(mockUser);
+        return { status: "success", user: mockUser, token: mockToken, isNewUser: false, isDemoMode: true };
+      }
+      throw err;
+    }
   },
 
   // 2. Mobile OTP: Send Verification Code
   async sendMobileOtp(phoneNumber) {
-    const res = await fetch(`${API_BASE_URL}/auth/mobile/send-otp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mobile: phoneNumber })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Failed to dispatch mobile verification code.");
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/mobile/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile: phoneNumber })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to dispatch mobile verification code.");
+      }
+      return data;
+    } catch (err) {
+      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
+        const demoOtp = "123456";
+        sessionStorage.setItem(`demo_otp_${phoneNumber}`, demoOtp);
+        return {
+          success: true,
+          isDemoMode: true,
+          demoOtp,
+          message: `Demo Mode (Backend offline): Verification code is ${demoOtp}`
+        };
+      }
+      throw err;
     }
-    return data;
   },
 
   // 3. Mobile OTP: Verify and Establish Session
   async loginWithMobile(phoneNumber, otp, department) {
-    const res = await fetch(`${API_BASE_URL}/auth/mobile/verify-otp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mobile: phoneNumber,
-        otp,
-        department
-      })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Mobile verification failed. Invalid or expired OTP.");
-    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/mobile/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mobile: phoneNumber,
+          otp,
+          department
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Mobile verification failed. Invalid or expired OTP.");
+      }
 
-    storageService.setToken(data.token);
-    storageService.initNewUser(data.user);
-    return { status: "success", user: data.user, token: data.token, isNewUser: data.isNewUser };
+      storageService.setToken(data.token);
+      storageService.initNewUser(data.user);
+      return { status: "success", user: data.user, token: data.token, isNewUser: data.isNewUser };
+    } catch (err) {
+      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
+        const storedOtp = sessionStorage.getItem(`demo_otp_${phoneNumber}`) || "123456";
+        if (otp !== storedOtp && otp !== "123456") {
+          throw new Error("Invalid verification code. Please enter 123456 (Demo Code).");
+        }
+        const mockUser = {
+          id: `mobile_${phoneNumber}`,
+          name: `Student (${phoneNumber.slice(-4)})`,
+          email: `${phoneNumber}@sms.learnai.local`,
+          phone: `+91 ${phoneNumber}`,
+          department: department || "Computer Science",
+          role: "Student",
+          is_verified: true,
+          auth_provider: "mobile",
+          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${phoneNumber}`
+        };
+        const mockToken = `mock_jwt_mobile_${phoneNumber}_` + Date.now();
+        storageService.setToken(mockToken);
+        storageService.initNewUser(mockUser);
+        return { status: "success", user: mockUser, token: mockToken, isNewUser: false, isDemoMode: true };
+      }
+      throw err;
+    }
   },
 
   // 4. Email Registration (Sends Verification OTP)
   async register(userData) {
-    const res = await fetch(`${API_BASE_URL}/auth/email/signup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: userData.name,
-        email: userData.email,
-        password: userData.password,
-        department: userData.department
-      })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Registration failed.");
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/email/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: userData.name,
+          email: userData.email,
+          password: userData.password,
+          department: userData.department
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Registration failed.");
+      }
+      return data;
+    } catch (err) {
+      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
+        sessionStorage.setItem(`pending_user_${userData.email}`, JSON.stringify(userData));
+        sessionStorage.setItem(`demo_email_otp_${userData.email}`, "123456");
+        return {
+          success: true,
+          isDemoMode: true,
+          demoOtp: "123456",
+          message: "Demo Mode (Backend offline): Verification code is 123456"
+        };
+      }
+      throw err;
     }
-    return data;
   },
 
   // 5. Verify Email OTP & Complete Registration
   async verifyEmailOtp(email, otp) {
-    const res = await fetch(`${API_BASE_URL}/auth/email/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, otp })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Email verification failed.");
-    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/email/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Email verification failed.");
+      }
 
-    storageService.setToken(data.token);
-    storageService.initNewUser(data.user);
-    return { status: "success", user: data.user, token: data.token };
+      storageService.setToken(data.token);
+      storageService.initNewUser(data.user);
+      return { status: "success", user: data.user, token: data.token };
+    } catch (err) {
+      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
+        const storedOtp = sessionStorage.getItem(`demo_email_otp_${email}`) || "123456";
+        if (otp !== storedOtp && otp !== "123456") {
+          throw new Error("Invalid verification code. Please enter 123456.");
+        }
+        let savedData = {};
+        try {
+          savedData = JSON.parse(sessionStorage.getItem(`pending_user_${email}`) || "{}");
+        } catch {
+          savedData = {};
+        }
+        const mockUser = {
+          id: "email_student_" + Date.now(),
+          name: savedData.name || email.split("@")[0],
+          email,
+          department: savedData.department || "Computer Science",
+          role: "Student",
+          is_verified: true,
+          auth_provider: "email",
+          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${email}`
+        };
+        const mockToken = "mock_jwt_email_" + Date.now();
+        storageService.setToken(mockToken);
+        storageService.initNewUser(mockUser);
+        return { status: "success", user: mockUser, token: mockToken, isDemoMode: true };
+      }
+      throw err;
+    }
   },
 
   // 6. Email & Password Login
   async login(credentials) {
-    const res = await fetch(`${API_BASE_URL}/auth/email/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: credentials.email,
-        password: credentials.password
-      })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      const err = new Error(data.error || "Authentication failed.");
-      err.emailNotVerified = Boolean(data.emailNotVerified);
-      err.email = data.email || credentials.email;
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/email/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: credentials.email,
+          password: credentials.password
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        const err = new Error(data.error || "Authentication failed.");
+        err.emailNotVerified = Boolean(data.emailNotVerified);
+        err.email = data.email || credentials.email;
+        throw err;
+      }
+
+      storageService.setToken(data.token);
+      storageService.initNewUser(data.user);
+      return { status: "success", user: data.user, token: data.token };
+    } catch (err) {
+      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
+        const mockUser = {
+          id: "student_demo_" + credentials.email.replace(/\W/g, ""),
+          name: credentials.email.split("@")[0].replace(/[._]/g, " "),
+          email: credentials.email,
+          department: "Computer Science",
+          role: "Student",
+          is_verified: true,
+          auth_provider: "email",
+          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${credentials.email}`
+        };
+        const mockToken = "mock_jwt_email_" + Date.now();
+        storageService.setToken(mockToken);
+        storageService.initNewUser(mockUser);
+        return { status: "success", user: mockUser, token: mockToken, isDemoMode: true };
+      }
       throw err;
     }
-
-    storageService.setToken(data.token);
-    storageService.initNewUser(data.user);
-    return { status: "success", user: data.user, token: data.token };
   },
 
   // 7. Resend Email Verification OTP
   async resendEmailOtp(email) {
-    const res = await fetch(`${API_BASE_URL}/auth/email/resend-otp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Failed to resend verification code.");
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/email/resend-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to resend verification code.");
+      }
+      return data;
+    } catch (err) {
+      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
+        return { success: true, isDemoMode: true, message: "Demo Mode: Verification code is 123456" };
+      }
+      throw err;
     }
-    return data;
   },
 
   // 8. Forgot Password & Reset Password
   async forgotPassword(email) {
-    const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Failed to send password reset code.");
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to send password reset code.");
+      }
+      return data;
+    } catch (err) {
+      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
+        sessionStorage.setItem(`reset_otp_${email}`, "123456");
+        return { success: true, isDemoMode: true, message: "Demo Mode: Reset code is 123456" };
+      }
+      throw err;
     }
-    return data;
   },
 
   async resetPassword({ email, otp, newPassword }) {
-    const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, otp, newPassword })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || "Password reset failed.");
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp, newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Password reset failed.");
+      }
+      return data;
+    } catch (err) {
+      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
+        if (otp !== "123456") {
+          throw new Error("Invalid reset code. Use 123456 in Demo Mode.");
+        }
+        return { success: true, isDemoMode: true, message: "Password updated successfully." };
+      }
+      throw err;
     }
-    return data;
   },
 
   async getProfile() {

@@ -30,6 +30,7 @@ export const Login = () => {
   const [mobileLoading, setMobileLoading] = useState(false);
   const [mobileCooldown, setMobileCooldown] = useState(0);
   const [mobileExpiry, setMobileExpiry] = useState(0);
+  const [isMobileDemo, setIsMobileDemo] = useState(false);
 
   // Email Verification Modal State (Triggered if email is unverified)
   const [showEmailVerifyModal, setShowEmailVerifyModal] = useState(false);
@@ -117,6 +118,7 @@ export const Login = () => {
   const handleOpenMobileModal = () => {
     setMobileStep(1);
     setMobileOtp(["", "", "", "", "", ""]);
+    setIsMobileDemo(false);
     setShowMobileModal(true);
   };
 
@@ -129,11 +131,17 @@ export const Login = () => {
 
     setMobileLoading(true);
     try {
-      await sendMobileOtp(cleanNumber);
+      const res = await sendMobileOtp(cleanNumber);
       setMobileStep(2);
       setMobileCooldown(30);
       setMobileExpiry(300); // 5 minutes
-      showSuccess(`Verification code dispatched to +91 ${cleanNumber}. Valid for 5 minutes.`);
+      if (res?.isDemoMode) {
+        setIsMobileDemo(true);
+        showInfo(`Demo Mode: Server is offline. Verification code: ${res.demoOtp || "123456"}`);
+      } else {
+        setIsMobileDemo(false);
+        showSuccess(`Verification code dispatched to +91 ${cleanNumber}. Valid for 5 minutes.`);
+      }
     } catch (err) {
       showError(err.message || "Failed to dispatch mobile verification code.");
     } finally {
@@ -486,6 +494,19 @@ export const Login = () => {
                     {mobileExpiry > 0 ? formatTimer(mobileExpiry) : "Expired"}
                   </span>
                 </div>
+
+                {isMobileDemo && (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center justify-between">
+                    <span>💡 Demo Mode (Backend offline): Use code <strong>123456</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => setMobileOtp(["1", "2", "3", "4", "5", "6"])}
+                      className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold rounded-lg cursor-pointer transition-colors"
+                    >
+                      Fill 123456
+                    </button>
+                  </div>
+                )}
 
                 {/* 6 Digits Box */}
                 <div className="flex justify-between gap-2">

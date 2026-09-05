@@ -30,9 +30,10 @@ export const Register = () => {
   const [emailOtpLoading, setEmailOtpLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [expiry, setExpiry] = useState(0);
+  const [isDemoOtp, setIsDemoOtp] = useState(false);
 
   const { register, verifyEmailOtp, resendEmailOtp, loginWithGoogle } = useAuth();
-  const { showSuccess, showError } = useToast();
+  const { showSuccess, showError, showInfo } = useToast();
   const navigate = useNavigate();
 
   // Cooldown and expiry timers
@@ -87,7 +88,7 @@ export const Register = () => {
 
     setLoading(true);
     try {
-      await register({
+      const res = await register({
         name,
         email,
         password,
@@ -96,8 +97,13 @@ export const Register = () => {
       setEmailOtpCode(["", "", "", "", "", ""]);
       setExpiry(300); // 5 minutes
       setCooldown(30);
+      setIsDemoOtp(Boolean(res?.isDemoMode));
       setShowEmailOtpModal(true);
-      showSuccess(`Verification code dispatched to ${email}. Valid for 5 minutes.`);
+      if (res?.isDemoMode) {
+        showInfo(`Demo Mode: Server is offline. Verification code: ${res.demoOtp || "123456"}`);
+      } else {
+        showSuccess(`Verification code dispatched to ${email}. Valid for 5 minutes.`);
+      }
     } catch (err) {
       showError(err.message || "Registration failed.");
     } finally {
@@ -329,6 +335,19 @@ export const Register = () => {
                 {expiry > 0 ? formatTimer(expiry) : "Expired"}
               </span>
             </div>
+
+            {isDemoOtp && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center justify-between">
+                <span>💡 Demo Mode (Backend offline): Use code <strong>123456</strong></span>
+                <button
+                  type="button"
+                  onClick={() => setEmailOtpCode(["1", "2", "3", "4", "5", "6"])}
+                  className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold rounded-lg cursor-pointer transition-colors"
+                >
+                  Fill 123456
+                </button>
+              </div>
+            )}
 
             {/* 6 Digits Box */}
             <div className="flex justify-between gap-2">
