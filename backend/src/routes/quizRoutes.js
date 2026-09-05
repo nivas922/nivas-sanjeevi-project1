@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { QuizController } from "../controllers/quizController.js";
 import { authGuard } from "../middleware/auth.js";
 import { aiRateLimiter } from "../middleware/rateLimiter.js";

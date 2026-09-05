@@ -1,4 +1,4 @@
-﻿import { env } from "./env.js";
+import { env } from "./env.js";
 
 export const otpProviderConfig = {
   provider: env.OTP_PROVIDER,

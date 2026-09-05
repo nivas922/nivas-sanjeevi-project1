@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { School } from "lucide-react";
 import { DEPARTMENTS } from "../../utils/constants";
 

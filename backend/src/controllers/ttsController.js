@@ -1,4 +1,4 @@
-﻿import { TtsService } from "../services/ttsService.js";
+import { TtsService } from "../services/ttsService.js";
 
 export class TtsController {
   // POST /text-to-speech

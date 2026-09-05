@@ -1,4 +1,4 @@
-﻿import React, { useRef } from "react";
+import React, { useRef } from "react";
 import { Camera, Upload, Image as ImageIcon } from "lucide-react";
 
 export const ProfilePicUpload = ({ avatarUrl, onImageChange, onUseGoogleAvatar }) => {

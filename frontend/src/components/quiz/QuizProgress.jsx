@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Clock, CheckCircle } from "lucide-react";
 
 export const QuizProgress = ({

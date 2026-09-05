@@ -1,4 +1,4 @@
-﻿import { Summary } from "../models/Summary.js";
+import { Summary } from "../models/Summary.js";
 import { Book } from "../models/Book.js";
 import { Progress } from "../models/Progress.js";
 import { ActivityLog } from "../models/ActivityLog.js";

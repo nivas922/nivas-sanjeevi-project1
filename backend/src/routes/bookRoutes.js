@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { BookController } from "../controllers/bookController.js";
 import { authGuard } from "../middleware/auth.js";
 import { uploadBookMiddleware } from "../middleware/upload.js";

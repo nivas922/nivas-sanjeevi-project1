@@ -1,4 +1,4 @@
-﻿import { env } from "./env.js";
+import { env } from "./env.js";
 
 export const translateConfig = {
   apiKey: env.GOOGLE_TRANSLATE_API_KEY,

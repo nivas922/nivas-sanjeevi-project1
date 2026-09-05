@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { CheckCircle2 } from "lucide-react";
 
 export const QuizPlayer = ({ question, index, total, selectedAnswer, onSelectAnswer }) => {

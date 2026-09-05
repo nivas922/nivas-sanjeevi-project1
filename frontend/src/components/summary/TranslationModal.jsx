@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Modal } from "../common/Modal";
 import { Globe, Volume2, CheckCircle2, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "../common/Button";

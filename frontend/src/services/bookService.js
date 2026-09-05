@@ -1,4 +1,4 @@
-﻿import { api } from "./api";
+import { api } from "./api";
 
 export const bookService = {
   uploadBook: (file, metadata, onProgress) => api.uploadTextbook(file, metadata, onProgress),

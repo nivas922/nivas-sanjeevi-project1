@@ -1,4 +1,4 @@
-﻿# LearnAI Platform: REST API Specification (Postman Style)
+# LearnAI Platform: REST API Specification (Postman Style)
 
 Base URL: `http://localhost:5000/api` (also accessible at root `/`)
 

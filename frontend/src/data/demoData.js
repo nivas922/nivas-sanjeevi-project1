@@ -1,4 +1,4 @@
-﻿export const INITIAL_USER = {
+export const INITIAL_USER = {
   id: "usr_101",
   name: "Alex Johnson",
   email: "alex.johnson@university.edu",

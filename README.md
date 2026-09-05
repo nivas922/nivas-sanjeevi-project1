@@ -1,4 +1,4 @@
-﻿# LearnAI: AI-Powered Multilingual Textbook Summarization and Adaptive Learning System
+# LearnAI: AI-Powered Multilingual Textbook Summarization and Adaptive Learning System
 
 An intelligent educational platform that ingests academic textbooks, extracts structured curriculum, synthesizes concepts, translates learning material into Indian languages, offers Text-to-Speech audio study, and dynamically adapts quizzes and recommendations based on student performance.
 

@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Modal } from "../common/Modal";
 import { Sparkles, ArrowRight, Lightbulb, BookOpen } from "lucide-react";
 import { Button } from "../common/Button";

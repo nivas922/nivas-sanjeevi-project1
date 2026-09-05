@@ -1,4 +1,4 @@
-﻿# LearnAI Backend
+# LearnAI Backend
 
 Robust, secure Node.js & Express REST API backend powering the **AI-Based Multilingual Textbook Summarization and Adaptive Learning System**.
 

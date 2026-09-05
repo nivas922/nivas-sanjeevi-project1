@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { AIQuiz } from "./AIQuiz";
 
 export const QuizPage = () => {

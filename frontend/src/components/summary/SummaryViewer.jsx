@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { BookOpen, CheckCircle, FileText } from "lucide-react";
 
 export const SummaryViewer = ({ summary }) => {

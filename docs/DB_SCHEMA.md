@@ -1,4 +1,4 @@
-﻿# LearnAI Database Architecture & Schema Reference
+# LearnAI Database Architecture & Schema Reference
 
 The platform uses a relational SQL model (SQLite in zero-config mode, with full native support for MySQL 8.0 and PostgreSQL via `.env`).
 

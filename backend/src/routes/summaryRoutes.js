@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { SummaryController } from "../controllers/summaryController.js";
 import { authGuard } from "../middleware/auth.js";
 import { aiRateLimiter } from "../middleware/rateLimiter.js";

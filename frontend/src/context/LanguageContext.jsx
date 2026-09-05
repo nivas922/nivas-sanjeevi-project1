@@ -1,4 +1,4 @@
-﻿import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { SUPPORTED_LANGUAGES } from "../utils/constants";
 import { storageService } from "../services/storageService";
 

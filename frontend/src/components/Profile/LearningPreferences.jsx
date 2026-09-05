@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Globe, Sliders } from "lucide-react";
 import { SUPPORTED_LANGUAGES } from "../../utils/constants";
 

@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { GraduationCap, Mail, ArrowLeft, Send, CheckCircle2 } from "lucide-react";
 import { Button } from "../components/common/Button";

@@ -1,4 +1,4 @@
-﻿import { Progress } from "../models/Progress.js";
+import { Progress } from "../models/Progress.js";
 
 export const progressService = {
   getUserProgress: (userId) => Progress.getAggregateForUser(userId),

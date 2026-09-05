@@ -1,4 +1,4 @@
-﻿import { VOICE_MODELS } from "../services/ttsService.js";
+import { VOICE_MODELS } from "../services/ttsService.js";
 
 export const ttsConfig = {
   voiceModels: VOICE_MODELS,

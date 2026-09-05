@@ -1,4 +1,4 @@
-﻿import React, { useRef } from "react";
+import React, { useRef } from "react";
 import { UploadCloud, FileText, CheckCircle2 } from "lucide-react";
 
 export const UploadBox = ({ onFileSelected, selectedFile, isProcessing }) => {

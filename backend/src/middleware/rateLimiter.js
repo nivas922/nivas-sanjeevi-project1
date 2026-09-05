@@ -1,4 +1,4 @@
-﻿import rateLimit from "express-rate-limit";
+import rateLimit from "express-rate-limit";
 
 // Rate limiting on OTP generation / verification: 5 requests per 10 minutes
 export const otpRateLimiter = rateLimit({

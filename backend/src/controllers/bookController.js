@@ -1,4 +1,4 @@
-﻿import path from "path";
+import path from "path";
 import { Book } from "../models/Book.js";
 import { Progress } from "../models/Progress.js";
 import { ActivityLog } from "../models/ActivityLog.js";

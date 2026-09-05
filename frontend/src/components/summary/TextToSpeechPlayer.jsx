@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { Volume2, VolumeX, Play, Pause, Loader2 } from "lucide-react";
 import { api } from "../../services/api";
 

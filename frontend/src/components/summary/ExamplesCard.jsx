@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { Code2, Copy, Check } from "lucide-react";
 import { useToast } from "../../context/ToastContext";
 

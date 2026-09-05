@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { BookMarked } from "lucide-react";
 
 export const DefinitionsCard = ({ definitions = [] }) => {

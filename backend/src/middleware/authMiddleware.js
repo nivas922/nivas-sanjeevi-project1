@@ -1,4 +1,4 @@
-﻿import { authGuard, generateToken } from "./auth.js";
+import { authGuard, generateToken } from "./auth.js";
 
 export const authMiddleware = authGuard;
 export { authGuard, generateToken };

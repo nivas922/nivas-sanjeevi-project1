@@ -1,4 +1,4 @@
-﻿import { env } from "../config/env.js";
+import { env } from "../config/env.js";
 
 // Comprehensive multilingual translation dataset for academic subjects
 export const TRANSLATION_DATA = {

@@ -1,4 +1,4 @@
-﻿import crypto from "crypto";
+import crypto from "crypto";
 
 export const generateOtp = (length = 6) => {
   const digits = "0123456789";

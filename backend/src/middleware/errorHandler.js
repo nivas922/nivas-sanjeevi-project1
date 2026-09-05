@@ -1,4 +1,4 @@
-﻿export const errorHandler = (err, req, res, next) => {
+export const errorHandler = (err, req, res, next) => {
   console.error("❌ Application Error:", err.stack || err.message || err);
 
   if (err.name === "MulterError") {

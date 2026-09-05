@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { ProgressController } from "../controllers/progressController.js";
 import { authGuard } from "../middleware/auth.js";
 

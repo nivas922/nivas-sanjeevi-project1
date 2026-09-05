@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Sigma } from "lucide-react";
 
 export const FormulasCard = ({ formulas = [] }) => {

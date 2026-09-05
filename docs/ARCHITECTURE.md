@@ -1,4 +1,4 @@
-﻿# LearnAI System Architecture & Technical Specifications
+# LearnAI System Architecture & Technical Specifications
 
 An intelligent educational platform for multilingual academic summarization, voice-driven audio learning, and adaptive curriculum mastery.
 

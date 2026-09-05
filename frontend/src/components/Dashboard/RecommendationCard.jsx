@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Sparkles, ArrowRight } from "lucide-react";
 
 export const RecommendationCard = ({ recommendations = [], onAction }) => {

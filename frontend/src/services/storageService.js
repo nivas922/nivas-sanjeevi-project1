@@ -1,4 +1,4 @@
-﻿import { INITIAL_SUBJECT_PROGRESS, DEPARTMENTS } from "../data/translations";
+import { INITIAL_SUBJECT_PROGRESS, DEPARTMENTS } from "../data/translations";
 
 const STORAGE_KEYS = {
   USER: "learnai_user_v3",

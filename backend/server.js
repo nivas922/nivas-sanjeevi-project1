@@ -1,4 +1,4 @@
-﻿import { app } from "./src/app.js";
+import { app } from "./src/app.js";
 import { env } from "./src/config/env.js";
 import { initDb } from "./src/config/db.js";
 

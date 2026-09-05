@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { BookOpen, FileText, CheckCircle2, Award } from "lucide-react";
 
 export const ProgressCard = ({ stats }) => {

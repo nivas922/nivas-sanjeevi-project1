@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { UploadTextbook } from "./UploadTextbook";
 
 export const UploadBook = () => {

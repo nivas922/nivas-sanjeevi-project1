@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Badge } from "../common/Badge";
 import { ProgressBar } from "../common/ProgressBar";
 

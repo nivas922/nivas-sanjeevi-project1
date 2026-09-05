@@ -1,4 +1,4 @@
-﻿export const SUPPORTED_LANGUAGES = [
+export const SUPPORTED_LANGUAGES = [
   { code: "en", name: "English", native: "English", flag: "🇬🇧", voice: "en-US" },
   { code: "ta", name: "Tamil", native: "தமிழ்", flag: "🇮🇳", voice: "ta-IN" },
   { code: "hi", name: "Hindi", native: "हिन्दी", flag: "🇮🇳", voice: "hi-IN" },

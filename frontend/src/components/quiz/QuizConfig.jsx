@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Sliders, HelpCircle } from "lucide-react";
 
 export const QuizConfig = ({ questionCount, onCountChange, onStart, loading }) => {

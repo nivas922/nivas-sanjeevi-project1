@@ -1,4 +1,4 @@
-﻿import { uploadBookMiddleware, uploadAvatarMiddleware } from "./upload.js";
+import { uploadBookMiddleware, uploadAvatarMiddleware } from "./upload.js";
 
 export const uploadMiddleware = {
   uploadBook: uploadBookMiddleware,

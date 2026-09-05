@@ -1,4 +1,4 @@
-﻿import { dbRun, initDb } from "../backend/src/config/db.js";
+import { dbRun, initDb } from "../backend/src/config/db.js";
 
 const seedDatabase = async () => {
   console.log("🌱 Seeding optional academic curriculum catalog (No default user data)...");

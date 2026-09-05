@@ -1,4 +1,4 @@
-﻿import { Progress } from "../models/Progress.js";
+import { Progress } from "../models/Progress.js";
 import { ActivityLog } from "../models/ActivityLog.js";
 import { User } from "../models/User.js";
 

@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Award, CheckCircle2, XCircle, RotateCcw } from "lucide-react";
 
 export const QuizResult = ({ result, onRetry }) => {

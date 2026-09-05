@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Book, FileText, ArrowRight } from "lucide-react";
 
 export const BookList = ({ books = [], onSelectBook }) => {

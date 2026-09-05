@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Sparkles, ArrowRight, Clock, BookOpen, HelpCircle } from "lucide-react";
 import { Badge } from "../common/Badge";
 import { Button } from "../common/Button";

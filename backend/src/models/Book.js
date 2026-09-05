@@ -1,4 +1,4 @@
-﻿import { dbRun, dbGet, dbAll } from "../config/db.js";
+import { dbRun, dbGet, dbAll } from "../config/db.js";
 import { v4 as uuidv4 } from "uuid";
 
 export class Book {

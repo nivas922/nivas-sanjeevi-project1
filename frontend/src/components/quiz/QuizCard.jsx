@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { Check, HelpCircle } from "lucide-react";
 import { Badge } from "../common/Badge";
 

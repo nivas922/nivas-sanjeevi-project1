@@ -1,4 +1,4 @@
-﻿export const DEPARTMENTS = [
+export const DEPARTMENTS = [
   "Computer Science & Engineering (CSE)",
   "Information Technology (IT)",
   "Artificial Intelligence & Data Science (AI & DS)",
