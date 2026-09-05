@@ -1,4 +1,4 @@
-﻿-- ====================================================================
+-- ====================================================================
 -- AI-Based Multilingual Textbook Summarization & Adaptive Learning System
 -- Database Schema DDL (PostgreSQL / MySQL / SQLite compatible)
 -- ====================================================================
@@ -7,7 +7,13 @@
 CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    email_or_mobile VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE,
+    email_verified BOOLEAN DEFAULT FALSE,
+    mobile_number VARCHAR(32) UNIQUE,
+    mobile_verified BOOLEAN DEFAULT FALSE,
+    google_id VARCHAR(128),
+    password_hash VARCHAR(255),
+    email_or_mobile VARCHAR(255), -- Backwards compatibility
     login_method VARCHAR(32) NOT NULL, -- 'google', 'mobile', 'email'
     profile_pic_url TEXT,
     role VARCHAR(128) DEFAULT 'Computer Science & Engineering (CSE)', -- CSE, IT, ECE, MECH, etc.
@@ -90,10 +96,15 @@ CREATE TABLE IF NOT EXISTS activity_log (
 
 -- 7. OTP Verifications Cache
 CREATE TABLE IF NOT EXISTS otp_verifications (
-    mobile VARCHAR(32) PRIMARY KEY,
+    id VARCHAR(64) PRIMARY KEY,
+    identifier VARCHAR(255) NOT NULL, -- phone number or email
+    type VARCHAR(32) NOT NULL, -- 'mobile_otp', 'email_verification', 'password_reset'
     otp_hash VARCHAR(255) NOT NULL,
     expires_at BIGINT NOT NULL,
-    created_at BIGINT NOT NULL
+    attempts INT DEFAULT 0,
+    locked_until BIGINT DEFAULT 0,
+    created_at BIGINT NOT NULL,
+    UNIQUE(identifier, type)
 );
 
 -- Indexes for high-frequency queries

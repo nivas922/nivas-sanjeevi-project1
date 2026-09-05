@@ -1,4 +1,4 @@
-﻿import { storageService } from "./storageService";
+import { storageService } from "./storageService";
 import { MULTILINGUAL_SUMMARIES, SUPPORTED_LANGUAGES, DEPARTMENTS } from "../data/translations";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
@@ -13,146 +13,159 @@ const getAuthHeaders = () => {
 };
 
 export const api = {
-  // Authentication & Registration
-  async register(userData) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/google`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: userData.name || "Student",
-          email: userData.email || "student@university.edu",
-          department: userData.department || DEPARTMENTS[0]
-        })
-      });
-      const data = await res.json();
-      if (data.token && data.user) {
-        storageService.setToken(data.token);
-        storageService.initNewUser(data.user);
-        return { status: "success", user: data.user, token: data.token };
-      }
-    } catch (err) {
-      console.warn("Backend API call failed, using fallback:", err.message);
-    }
-
-    const freshUser = storageService.initNewUser({
-      name: userData.name || "Student",
-      email: userData.email || "student@university.edu",
-      department: userData.department || DEPARTMENTS[0]
+  // 1. Google OAuth Verification Login
+  async loginWithGoogle(idToken, department) {
+    const res = await fetch(`${API_BASE_URL}/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id_token: idToken,
+        department
+      })
     });
-    return { status: "success", user: freshUser, token: "token_" + Date.now() };
-  },
-
-  async login(credentials) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/google`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: credentials.email ? credentials.email.split("@")[0] : "Student",
-          email: credentials.email || "student@university.edu",
-          department: DEPARTMENTS[0]
-        })
-      });
-      const data = await res.json();
-      if (data.token && data.user) {
-        storageService.setToken(data.token);
-        storageService.initNewUser(data.user);
-        return { status: "success", user: data.user, token: data.token };
-      }
-    } catch (err) {
-      console.warn("Backend API call failed, using fallback:", err.message);
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Google authentication verification failed.");
     }
 
-    let user = storageService.getUser();
-    if (!user) {
-      user = storageService.initNewUser({
-        name: credentials.email ? credentials.email.split("@")[0] : "Student",
-        email: credentials.email || "student@university.edu",
-        department: DEPARTMENTS[0]
-      });
-    }
-    return { status: "success", user, token: "token_" + Date.now() };
+    storageService.setToken(data.token);
+    storageService.initNewUser(data.user);
+    return { status: "success", user: data.user, token: data.token, isNewUser: data.isNewUser };
   },
 
-  async loginWithGoogle(accountData = {}) {
-    const name = accountData.name || "NIVAS M";
-    const email = accountData.email || "nivasm.it24@bitsathy.ac.in";
-    const avatar = accountData.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=google_${encodeURIComponent(name)}`;
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/google`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          email,
-          avatar,
-          department: accountData.department || DEPARTMENTS[0]
-        })
-      });
-      const data = await res.json();
-      if (data.token && data.user) {
-        storageService.setToken(data.token);
-        storageService.initNewUser(data.user);
-        return { status: "success", user: data.user, token: data.token };
-      }
-    } catch (err) {
-      console.warn("Backend Google login call notice:", err.message);
-    }
-
-    const googleUser = storageService.initNewUser({
-      name,
-      email,
-      department: accountData.department || DEPARTMENTS[0],
-      avatar
-    });
-    return { status: "success", user: googleUser, token: "google_token_" + Date.now() };
-  },
-
+  // 2. Mobile OTP: Send Verification Code
   async sendMobileOtp(phoneNumber) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/mobile/send-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mobile: phoneNumber })
-      });
-      const data = await res.json();
-      return data;
-    } catch (err) {
-      console.warn("Send OTP backend notice:", err.message);
-      return { success: true, message: "OTP simulated" };
+    const res = await fetch(`${API_BASE_URL}/auth/mobile/send-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mobile: phoneNumber })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to dispatch mobile verification code.");
     }
+    return data;
   },
 
-  async loginWithMobile(phoneNumber, otp) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/mobile/verify-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mobile: phoneNumber,
-          otp,
-          department: DEPARTMENTS[0]
-        })
-      });
-      const data = await res.json();
-      if (data.token && data.user) {
-        storageService.setToken(data.token);
-        storageService.initNewUser(data.user);
-        return { status: "success", user: data.user, token: data.token };
-      }
-    } catch (err) {
-      console.warn("Backend verify OTP notice:", err.message);
+  // 3. Mobile OTP: Verify and Establish Session
+  async loginWithMobile(phoneNumber, otp, department) {
+    const res = await fetch(`${API_BASE_URL}/auth/mobile/verify-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mobile: phoneNumber,
+        otp,
+        department
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Mobile verification failed. Invalid or expired OTP.");
     }
 
-    const mobileUser = storageService.initNewUser({
-      name: `Student (${phoneNumber.slice(-4)})`,
-      email: `user.${phoneNumber.slice(-4)}@mobile.edu`,
-      department: DEPARTMENTS[0],
-      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=mobile_${phoneNumber}`
+    storageService.setToken(data.token);
+    storageService.initNewUser(data.user);
+    return { status: "success", user: data.user, token: data.token, isNewUser: data.isNewUser };
+  },
+
+  // 4. Email Registration (Sends Verification OTP)
+  async register(userData) {
+    const res = await fetch(`${API_BASE_URL}/auth/email/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: userData.name,
+        email: userData.email,
+        password: userData.password,
+        department: userData.department
+      })
     });
-    return { status: "success", user: mobileUser, token: "otp_token_" + Date.now() };
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Registration failed.");
+    }
+    return data;
+  },
+
+  // 5. Verify Email OTP & Complete Registration
+  async verifyEmailOtp(email, otp) {
+    const res = await fetch(`${API_BASE_URL}/auth/email/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, otp })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Email verification failed.");
+    }
+
+    storageService.setToken(data.token);
+    storageService.initNewUser(data.user);
+    return { status: "success", user: data.user, token: data.token };
+  },
+
+  // 6. Email & Password Login
+  async login(credentials) {
+    const res = await fetch(`${API_BASE_URL}/auth/email/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: credentials.email,
+        password: credentials.password
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      const err = new Error(data.error || "Authentication failed.");
+      err.emailNotVerified = Boolean(data.emailNotVerified);
+      err.email = data.email || credentials.email;
+      throw err;
+    }
+
+    storageService.setToken(data.token);
+    storageService.initNewUser(data.user);
+    return { status: "success", user: data.user, token: data.token };
+  },
+
+  // 7. Resend Email Verification OTP
+  async resendEmailOtp(email) {
+    const res = await fetch(`${API_BASE_URL}/auth/email/resend-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to resend verification code.");
+    }
+    return data;
+  },
+
+  // 8. Forgot Password & Reset Password
+  async forgotPassword(email) {
+    const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to send password reset code.");
+    }
+    return data;
+  },
+
+  async resetPassword({ email, otp, newPassword }) {
+    const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, otp, newPassword })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Password reset failed.");
+    }
+    return data;
   },
 
   async getProfile() {

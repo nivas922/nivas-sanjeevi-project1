@@ -31,10 +31,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginWithGoogle = async (accountData = {}) => {
+  const loginWithGoogle = async (idToken, department) => {
     setLoading(true);
     try {
-      const res = await api.loginWithGoogle(accountData);
+      const res = await api.loginWithGoogle(idToken, department);
       setUser(res.user);
       setToken(res.token);
       return res.user;
@@ -43,10 +43,14 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginWithMobile = async (phoneNumber, otp) => {
+  const sendMobileOtp = async (phoneNumber) => {
+    return api.sendMobileOtp(phoneNumber);
+  };
+
+  const loginWithMobile = async (phoneNumber, otp, department) => {
     setLoading(true);
     try {
-      const res = await api.loginWithMobile(phoneNumber, otp);
+      const res = await api.loginWithMobile(phoneNumber, otp, department);
       setUser(res.user);
       setToken(res.token);
       return res.user;
@@ -55,16 +59,29 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (name, email, password, department) => {
+  const register = async (userData) => {
     setLoading(true);
     try {
-      const res = await api.register({ name, email, password, department });
+      return await api.register(userData);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyEmailOtp = async (email, otp) => {
+    setLoading(true);
+    try {
+      const res = await api.verifyEmailOtp(email, otp);
       setUser(res.user);
       setToken(res.token);
       return res.user;
     } finally {
       setLoading(false);
     }
+  };
+
+  const resendEmailOtp = async (email) => {
+    return api.resendEmailOtp(email);
   };
 
   const logout = () => {
@@ -88,8 +105,11 @@ export const AuthProvider = ({ children }) => {
         loading,
         login,
         loginWithGoogle,
+        sendMobileOtp,
         loginWithMobile,
         register,
+        verifyEmailOtp,
+        resendEmailOtp,
         logout,
         updateProfile
       }}

@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { Phone, ShieldCheck, ArrowRight, Loader2 } from "lucide-react";
 
 export const MobileOtpLogin = ({ onSendOtp, onVerifyOtp, loading }) => {
@@ -15,7 +15,7 @@ export const MobileOtpLogin = ({ onSendOtp, onVerifyOtp, loading }) => {
 
   const handleVerify = async (e) => {
     e.preventDefault();
-    if (!otp || otp.length < 4) return;
+    if (!otp || otp.length < 6) return;
     await onVerifyOtp(phone, otp);
   };
 

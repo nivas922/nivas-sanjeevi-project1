@@ -1,4 +1,4 @@
-﻿import sqlite3 from "sqlite3";
+import sqlite3 from "sqlite3";
 import path from "path";
 import fs from "fs";
 import { env } from "./env.js";
@@ -55,7 +55,13 @@ export const initDb = async () => {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      email_or_mobile TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE,
+      email_verified INTEGER DEFAULT 0,
+      mobile_number TEXT UNIQUE,
+      mobile_verified INTEGER DEFAULT 0,
+      google_id TEXT,
+      password_hash TEXT,
+      email_or_mobile TEXT,
       login_method TEXT NOT NULL,
       profile_pic_url TEXT,
       role TEXT DEFAULT 'Computer Science & Engineering (CSE)',
@@ -63,6 +69,45 @@ export const initDb = async () => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Auto-migration for existing users table columns
+  try {
+    const userCols = await dbAll("PRAGMA table_info(users);");
+    const colNames = userCols.map((c) => c.name);
+    
+    if (!colNames.includes("email")) {
+      await dbRun("ALTER TABLE users ADD COLUMN email TEXT;");
+    }
+    if (!colNames.includes("email_verified")) {
+      await dbRun("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0;");
+    }
+    if (!colNames.includes("mobile_number")) {
+      await dbRun("ALTER TABLE users ADD COLUMN mobile_number TEXT;");
+    }
+    if (!colNames.includes("mobile_verified")) {
+      await dbRun("ALTER TABLE users ADD COLUMN mobile_verified INTEGER DEFAULT 0;");
+    }
+    if (!colNames.includes("google_id")) {
+      await dbRun("ALTER TABLE users ADD COLUMN google_id TEXT;");
+    }
+    if (!colNames.includes("password_hash")) {
+      await dbRun("ALTER TABLE users ADD COLUMN password_hash TEXT;");
+    }
+
+    // Backfill email & mobile from legacy email_or_mobile if available
+    await dbRun(`
+      UPDATE users 
+      SET email = email_or_mobile 
+      WHERE email IS NULL AND email_or_mobile LIKE '%@%'
+    `);
+    await dbRun(`
+      UPDATE users 
+      SET mobile_number = email_or_mobile 
+      WHERE mobile_number IS NULL AND email_or_mobile NOT LIKE '%@%' AND email_or_mobile IS NOT NULL
+    `);
+  } catch (migErr) {
+    console.warn("User migration note:", migErr.message);
+  }
 
   // 2. Books table
   await dbRun(`
@@ -147,13 +192,29 @@ export const initDb = async () => {
     );
   `);
 
-  // OTP Verification Cache Table for mobile login
+  // OTP Verification Cache Table (supports mobile OTP, email verification, password reset)
+  try {
+    const otpCols = await dbAll("PRAGMA table_info(otp_verifications);");
+    const colNames = otpCols.map((c) => c.name);
+    if (otpCols.length > 0 && !colNames.includes("identifier")) {
+      // Migrate old schema by recreating table (ephemeral data)
+      await dbRun("DROP TABLE otp_verifications;");
+    }
+  } catch (err) {
+    console.warn("OTP table check:", err.message);
+  }
+
   await dbRun(`
     CREATE TABLE IF NOT EXISTS otp_verifications (
-      mobile TEXT PRIMARY KEY,
+      id TEXT PRIMARY KEY,
+      identifier TEXT NOT NULL,
+      type TEXT NOT NULL,
       otp_hash TEXT NOT NULL,
       expires_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL
+      attempts INTEGER DEFAULT 0,
+      locked_until INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      UNIQUE(identifier, type)
     );
   `);
 

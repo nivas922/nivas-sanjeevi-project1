@@ -1,4 +1,4 @@
-﻿import { body, param, validationResult } from "express-validator";
+import { body, param, validationResult } from "express-validator";
 
 export const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
@@ -13,28 +13,80 @@ export const handleValidationErrors = (req, res, next) => {
 };
 
 export const validateGoogleAuth = [
-  body("email").optional().isEmail().normalizeEmail().withMessage("Invalid email address"),
-  body("name").optional().trim().isLength({ min: 1, max: 100 }).withMessage("Name must be between 1 and 100 characters"),
+  body("id_token")
+    .custom((val, { req }) => {
+      const token = val || req.body.credential || req.body.token;
+      if (!token || typeof token !== "string" || token.trim().length === 0) {
+        throw new Error("Google id_token is required");
+      }
+      return true;
+    }),
   handleValidationErrors
 ];
 
 export const validateSendOtp = [
   body("mobile")
-    .trim()
-    .matches(/^[+]?[0-9]{10,15}$/)
-    .withMessage("Please provide a valid 10-15 digit mobile number"),
+    .custom((val, { req }) => {
+      const mobile = val || req.body.mobile_number;
+      if (!mobile || !/^[+]?[0-9]{10,15}$/.test(mobile.toString().trim())) {
+        throw new Error("Please provide a valid 10-15 digit mobile number (E.164 format)");
+      }
+      return true;
+    }),
   handleValidationErrors
 ];
 
 export const validateVerifyOtp = [
   body("mobile")
-    .trim()
-    .matches(/^[+]?[0-9]{10,15}$/)
-    .withMessage("Please provide a valid mobile number"),
+    .custom((val, { req }) => {
+      const mobile = val || req.body.mobile_number;
+      if (!mobile || !/^[+]?[0-9]{10,15}$/.test(mobile.toString().trim())) {
+        throw new Error("Please provide a valid mobile number");
+      }
+      return true;
+    }),
   body("otp")
     .trim()
-    .isLength({ min: 4, max: 8 })
-    .withMessage("OTP must be between 4 and 8 digits"),
+    .matches(/^[0-9]{4,8}$/)
+    .withMessage("OTP must be a numeric 4-8 digit code"),
+  handleValidationErrors
+];
+
+export const validateEmailSignup = [
+  body("name").trim().notEmpty().isLength({ min: 2, max: 100 }).withMessage("Name is required (2-100 characters)"),
+  body("email").trim().isEmail().normalizeEmail().withMessage("Valid email address is required"),
+  body("password").isLength({ min: 6, max: 100 }).withMessage("Password must be at least 6 characters"),
+  handleValidationErrors
+];
+
+export const validateEmailVerify = [
+  body("email").trim().isEmail().normalizeEmail().withMessage("Valid email address is required"),
+  body("otp").trim().matches(/^[0-9]{4,8}$/).withMessage("OTP must be a numeric code"),
+  handleValidationErrors
+];
+
+export const validateEmailLogin = [
+  body("email").trim().isEmail().normalizeEmail().withMessage("Valid email address is required"),
+  body("password").notEmpty().withMessage("Password is required"),
+  handleValidationErrors
+];
+
+export const validateForgotPassword = [
+  body("email").trim().isEmail().normalizeEmail().withMessage("Valid email address is required"),
+  handleValidationErrors
+];
+
+export const validateResetPassword = [
+  body("email").trim().isEmail().normalizeEmail().withMessage("Valid email address is required"),
+  body("otp").trim().matches(/^[0-9]{4,8}$/).withMessage("OTP must be a numeric code"),
+  body("newPassword")
+    .custom((val, { req }) => {
+      const pwd = val || req.body.password;
+      if (!pwd || pwd.length < 6) {
+        throw new Error("New password must be at least 6 characters");
+      }
+      return true;
+    }),
   handleValidationErrors
 ];
 

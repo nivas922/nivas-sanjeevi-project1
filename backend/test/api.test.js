@@ -1,9 +1,13 @@
-﻿import assert from "assert";
+import assert from "assert";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { app } from "../src/app.js";
 import { initDb, dbRun } from "../src/config/db.js";
+import { env } from "../src/config/env.js";
+
+process.env.NODE_ENV = "test";
+env.NODE_ENV = "test";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,24 +37,35 @@ const runTests = async () => {
     assert.strictEqual(healthData.status, "healthy");
     console.log("✔ GET /health returned 200 OK");
 
-    // Test 2: Google Authentication
-    console.log("\n[Test 2] POST /auth/google (Google OAuth Login/Signup)");
+    // Test 2: Google Authentication & Real Verification Security
+    console.log("\n[Test 2] POST /auth/google (Google OAuth Real Token Verification)");
     const testEmail = `alan.turing.${Date.now()}@cambridge.edu`;
-    const googleRes = await fetch(`${BASE_URL}/auth/google`, {
+    
+    // 2a: Reject fake / invalid Google token
+    const fakeGoogleRes = await fetch(`${BASE_URL}/auth/google`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Dr. Alan Turing",
-        email: testEmail,
+        id_token: "fake_invalid_google_token_12345"
+      })
+    });
+    assert.strictEqual(fakeGoogleRes.status, 401);
+    console.log("✔ POST /auth/google rejected invalid Google token with 401 Unauthorized");
+
+    // 2b: Successful verification with valid Google token
+    const validGoogleRes = await fetch(`${BASE_URL}/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id_token: `mock_valid_google_token_${testEmail}`,
         department: "Computer Science & Engineering (CSE)"
       })
     });
-    const googleData = await googleRes.json();
-    assert.strictEqual(googleRes.status, 200);
+    const googleData = await validGoogleRes.json();
+    assert.strictEqual(validGoogleRes.status, 200);
     assert.ok(googleData.token, "Token should be issued");
-    assert.strictEqual(googleData.user.name, "Dr. Alan Turing");
     assert.strictEqual(googleData.user.preferred_language, "en");
-    console.log("✔ POST /auth/google successfully created user and issued JWT");
+    console.log("✔ POST /auth/google authenticated valid Google token and issued JWT");
     const googleToken = googleData.token;
     const googleUserId = googleData.user.id;
 
@@ -76,7 +91,7 @@ const runTests = async () => {
     assert.deepStrictEqual(activityData.activities, []);
     console.log("✔ New user activity log is strictly empty [] (no default/demo data)");
 
-    // Test 4: Mobile OTP Authentication Flow
+    // Test 4: Mobile OTP Authentication Flow & Incorrect OTP Rejection
     console.log("\n[Test 4] Mobile OTP Flow: POST /auth/mobile/send-otp & POST /auth/mobile/verify-otp");
     const testMobile = "9876543210";
     const sendOtpRes = await fetch(`${BASE_URL}/auth/mobile/send-otp`, {
@@ -90,6 +105,21 @@ const runTests = async () => {
     const otpCode = sendOtpData.data.devOtp;
     console.log(`✔ POST /auth/mobile/send-otp dispatched code ${otpCode}`);
 
+    // 4a: Test invalid OTP code rejection
+    const wrongOtpRes = await fetch(`${BASE_URL}/auth/mobile/verify-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mobile: testMobile,
+        otp: "000000"
+      })
+    });
+    assert.strictEqual(wrongOtpRes.status, 400);
+    const wrongOtpData = await wrongOtpRes.json();
+    assert.ok(wrongOtpData.error.includes("Invalid verification code"));
+    console.log("✔ POST /auth/mobile/verify-otp rejected invalid OTP with 400");
+
+    // 4b: Test correct OTP verification
     const verifyOtpRes = await fetch(`${BASE_URL}/auth/mobile/verify-otp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -103,7 +133,65 @@ const runTests = async () => {
     assert.strictEqual(verifyOtpRes.status, 200);
     assert.ok(verifyOtpData.token, "Mobile token should be issued");
     assert.strictEqual(verifyOtpData.user.login_method, "mobile");
-    console.log("✔ POST /auth/mobile/verify-otp verified successfully with consistent JWT format");
+    assert.strictEqual(verifyOtpData.user.mobile_verified, true);
+    console.log("✔ POST /auth/mobile/verify-otp verified successfully with JWT");
+
+    // Test 4c: Email Signup & Enforced Verification Flow
+    console.log("\n[Test 4c] Email Authentication: Signup -> Unverified Rejection -> OTP Verification -> Login");
+    const emailUserEmail = `verified.student.${Date.now()}@university.edu`;
+    const signupRes = await fetch(`${BASE_URL}/auth/email/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Verified Student",
+        email: emailUserEmail,
+        password: "securepassword123",
+        department: "Computer Science & Engineering (CSE)"
+      })
+    });
+    const signupData = await signupRes.json();
+    assert.strictEqual(signupRes.status, 201);
+    assert.ok(signupData.devOtp, "Verification OTP should be returned in test");
+    const emailOtp = signupData.devOtp;
+    console.log("✔ POST /auth/email/signup created account with email_verified: false");
+
+    // Attempt login BEFORE verifying email -> must reject with 403
+    const unverifiedLoginRes = await fetch(`${BASE_URL}/auth/email/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: emailUserEmail,
+        password: "securepassword123"
+      })
+    });
+    assert.strictEqual(unverifiedLoginRes.status, 403);
+    console.log("✔ POST /auth/email/login rejected unverified account with 403 Forbidden");
+
+    // Verify email with OTP
+    const emailVerifyRes = await fetch(`${BASE_URL}/auth/email/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: emailUserEmail,
+        otp: emailOtp
+      })
+    });
+    assert.strictEqual(emailVerifyRes.status, 200);
+    console.log("✔ POST /auth/email/verify verified email OTP successfully");
+
+    // Attempt login AFTER verifying email -> must succeed with 200 and JWT
+    const verifiedLoginRes = await fetch(`${BASE_URL}/auth/email/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: emailUserEmail,
+        password: "securepassword123"
+      })
+    });
+    const verifiedLoginData = await verifiedLoginRes.json();
+    assert.strictEqual(verifiedLoginRes.status, 200);
+    assert.ok(verifiedLoginData.token, "JWT token must be issued upon verified login");
+    console.log("✔ POST /auth/email/login allowed login after verification");
 
     // Test 5: Profile Update (PUT /profile)
     console.log("\n[Test 5] PUT /profile (Update Role & Preferred Language to Tamil)");
