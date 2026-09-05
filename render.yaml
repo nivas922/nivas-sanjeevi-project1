@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: learnai-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DB_TYPE
+        value: sqlite
+      - key: CORS_ORIGIN
+        value: "*"
