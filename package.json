@@ -4,6 +4,9 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "dev": "node start-dev.js",
+    "backend": "npm run dev --prefix backend",
+    "frontend": "npm run dev --prefix frontend",
     "build": "node build.js"
   }
 }
