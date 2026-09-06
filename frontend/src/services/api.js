@@ -1,7 +1,7 @@
 import { storageService } from "./storageService";
 import { MULTILINGUAL_SUMMARIES, SUPPORTED_LANGUAGES, DEPARTMENTS } from "../data/translations";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "/api" : "http://localhost:5000/api");
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const getAuthHeaders = () => {
