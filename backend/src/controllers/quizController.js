@@ -3,42 +3,68 @@ import { Book } from "../models/Book.js";
 import { Progress } from "../models/Progress.js";
 import { ActivityLog } from "../models/ActivityLog.js";
 import { AiService } from "../services/aiService.js";
+import { AdaptiveLearningService } from "../services/adaptiveLearningService.js";
 
 export class QuizController {
   // POST /generate-quiz
   static async generateQuiz(req, res, next) {
     try {
-      const { book_id, bookId, num_questions, questionCount } = req.body;
-      const targetBookId = book_id || bookId;
+      const { book_id, bookId, num_questions, questionCount, difficulty, language, target_language, topic, isAdaptive } = req.body;
+      let targetBookId = book_id || bookId;
       const totalQuestions = parseInt(num_questions || questionCount || 5, 10);
-      const language = req.body.language || req.user?.preferred_language || "en";
+      const targetLang = language || target_language || req.user?.preferred_language || "en";
 
-      let subject = "Computer Science & Engineering";
-      let title = "Academic Knowledge Assessment";
-
-      if (targetBookId) {
-        const book = await Book.findById(targetBookId);
-        if (book) {
-          subject = book.subject;
-          title = `${book.title} AI Mastery Quiz`;
+      if (!targetBookId && req.userId) {
+        const userBook = await Book.findLatestByUserId(req.userId);
+        if (userBook) {
+          targetBookId = userBook.id;
+        } else {
+          const globalBook = await Book.findLatest();
+          if (globalBook) {
+            targetBookId = globalBook.id;
+          }
         }
       }
 
+      if (!targetBookId) {
+        return res.status(400).json({
+          success: false,
+          error: "No textbook specified or found. Please upload a textbook first to generate an AI quiz."
+        });
+      }
+
+      const book = await Book.findById(targetBookId);
+      if (!book) {
+        return res.status(404).json({
+          success: false,
+          error: `Textbook with ID '${targetBookId}' not found.`
+        });
+      }
+
+      const title = `${book.title} AI Mastery Quiz`;
+      const subject = book.subject || "Academic Assessment";
+
+      let finalDifficulty = difficulty;
+      if (!finalDifficulty || isAdaptive) {
+        finalDifficulty = await AdaptiveLearningService.getRecommendedDifficulty(req.userId, topic, targetBookId);
+      }
+
       const generatedQuestions = await AiService.generateQuizQuestions({
+        bookId: targetBookId,
         bookTitle: title,
         subject,
         numQuestions: totalQuestions,
-        targetLanguage: language
+        targetLanguage: targetLang,
+        difficulty: finalDifficulty || "Intermediate"
       });
 
       const quiz = await Quiz.create({
-        book_id: targetBookId || null,
-        user_id: req.userId,
+        book_id: targetBookId,
+        user_id: req.userId || null,
         num_questions: generatedQuestions.length,
         questions: generatedQuestions
       });
 
-      // Sanitized questions for client (keep correctAnswer for offline verification if needed by frontend)
       return res.status(201).json({
         success: true,
         status: "success",
@@ -50,6 +76,7 @@ export class QuizController {
           title,
           subject,
           topic: subject,
+          difficulty: finalDifficulty || "Intermediate",
           totalQuestions: generatedQuestions.length,
           timeLimitMinutes: Math.max(5, Math.ceil(generatedQuestions.length * 1.5))
         }
@@ -73,6 +100,10 @@ export class QuizController {
       const quiz = await Quiz.findById(targetQuizId);
       if (!quiz) {
         return res.status(404).json({ success: false, error: "Quiz not found." });
+      }
+
+      if (quiz.user_id && req.userId && quiz.user_id !== req.userId) {
+        return res.status(403).json({ success: false, error: "You do not have authorization to submit this quiz." });
       }
 
       const questions = quiz.questions || [];
@@ -175,6 +206,11 @@ export class QuizController {
       if (!quiz) {
         return res.status(404).json({ success: false, error: "Quiz not found." });
       }
+
+      if (quiz.user_id && req.userId && quiz.user_id !== req.userId) {
+        return res.status(403).json({ success: false, error: "You do not have authorization to access this quiz." });
+      }
+
       return res.status(200).json({
         success: true,
         status: "success",

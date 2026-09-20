@@ -91,8 +91,13 @@ export const validateResetPassword = [
 ];
 
 export const validateSummarize = [
-  body("book_id").trim().notEmpty().withMessage("book_id is required"),
-  body("target_language").optional().trim().isLength({ min: 2, max: 10 }).withMessage("Invalid target_language code"),
+  body().custom((reqBody) => {
+    const targetBookId = reqBody.book_id || reqBody.bookId;
+    if (!targetBookId) {
+      throw new Error("book_id is required");
+    }
+    return true;
+  }),
   handleValidationErrors
 ];
 
@@ -103,13 +108,25 @@ export const validateTTS = [
 ];
 
 export const validateGenerateQuiz = [
-  body("book_id").trim().notEmpty().withMessage("book_id is required"),
+  body().custom((reqBody) => {
+    const targetBookId = reqBody.book_id || reqBody.bookId;
+    if (!targetBookId) {
+      throw new Error("book_id is required");
+    }
+    return true;
+  }),
   body("num_questions").optional().isInt({ min: 1, max: 30 }).withMessage("num_questions must be between 1 and 30"),
   handleValidationErrors
 ];
 
 export const validateSubmitQuiz = [
-  body("quiz_id").trim().notEmpty().withMessage("quiz_id is required"),
+  body().custom((reqBody) => {
+    const targetQuizId = reqBody.quiz_id || reqBody.quizId;
+    if (!targetQuizId) {
+      throw new Error("quiz_id is required");
+    }
+    return true;
+  }),
   body("answers").notEmpty().withMessage("answers object is required"),
   handleValidationErrors
 ];

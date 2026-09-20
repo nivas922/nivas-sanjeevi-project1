@@ -1,12 +1,19 @@
 import { Progress } from "../models/Progress.js";
 import { ActivityLog } from "../models/ActivityLog.js";
 import { User } from "../models/User.js";
+import { Book } from "../models/Book.js";
+import { AdaptiveLearningService } from "../services/adaptiveLearningService.js";
 
 export class ProgressController {
   // GET /progress/:user_id
   static async getProgress(req, res, next) {
     try {
       const targetUserId = req.params.user_id || req.userId;
+
+      // Authorization check: prevent reading other user's progress
+      if (req.userId && targetUserId !== req.userId) {
+        return res.status(403).json({ success: false, error: "You do not have authorization to view this user's progress." });
+      }
 
       const user = await User.findById(targetUserId);
       if (!user) {
@@ -62,12 +69,16 @@ export class ProgressController {
     try {
       const targetUserId = req.params.user_id || req.userId;
 
+      // Authorization check
+      if (req.userId && targetUserId !== req.userId) {
+        return res.status(403).json({ success: false, error: "You do not have authorization to view this user's activity log." });
+      }
+
       const user = await User.findById(targetUserId);
       if (!user) {
         return res.status(404).json({ success: false, error: "User not found." });
       }
 
-      // If new account with no activities, returns empty array [] (strictly no demo data)
       const activities = await ActivityLog.findByUserId(targetUserId, 20);
 
       return res.status(200).json({
@@ -75,6 +86,36 @@ export class ProgressController {
         status: "success",
         user_id: targetUserId,
         activities
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /adaptive-learning/:bookId or GET /adaptive-learning
+  static async getAdaptiveLearning(req, res, next) {
+    try {
+      const targetUserId = req.userId;
+      const bookId = req.params.bookId || req.query.book_id || req.query.bookId || null;
+
+      if (bookId) {
+        const book = await Book.findById(bookId);
+        if (!book) {
+          return res.status(404).json({ success: false, error: "Textbook not found." });
+        }
+        if (book.user_id && book.user_id !== targetUserId) {
+          return res.status(403).json({ success: false, error: "You do not have authorization to access adaptive learning for this textbook." });
+        }
+      }
+
+      const dashboard = await AdaptiveLearningService.getAdaptiveDashboard(targetUserId, bookId);
+
+      return res.status(200).json({
+        success: true,
+        status: "success",
+        user_id: targetUserId,
+        book_id: bookId,
+        ...dashboard
       });
     } catch (error) {
       next(error);

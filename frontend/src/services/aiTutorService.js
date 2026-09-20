@@ -145,11 +145,11 @@ The **TCP 3-Way Handshake** is the standard mechanism used by the Transmission C
   }
 ];
 
-export const aiTutorService = {
-  // Generate smart response for any doubt in any language
-  async askDoubt(question, languageCode = "en") {
-    await new Promise(resolve => setTimeout(resolve, 500));
+import { api } from "./api";
 
+export const aiTutorService = {
+  // Real AI Academic Tutor calling backend POST /api/ask-doubt
+  async askDoubt(question, languageCode = "en", bookId = null) {
     if (!question || question.trim().length === 0) {
       return {
         answer: "Please ask a question or enter your academic doubt.",
@@ -158,66 +158,36 @@ export const aiTutorService = {
       };
     }
 
-    const qLower = question.toLowerCase().trim();
+    try {
+      const data = await api.askDoubt({
+        bookId,
+        question,
+        language: languageCode
+      });
 
-    // 1. Search in curated academic knowledge base
-    const matched = KNOWLEDGE_BASE.find(item =>
-      item.keywords.some(kw => qLower.includes(kw))
-    );
-
-    if (matched) {
-      let answerText = matched[languageCode] || matched.en;
-      if (!matched[languageCode] && languageCode !== "en") {
-        answerText = translatorService.translateText(matched.en, languageCode, "en");
+      let formattedAnswer = data.answer || "No response received.";
+      if (data.keyPoints && data.keyPoints.length > 0) {
+        formattedAnswer += "\n\n### 📌 Key Takeaways:\n" + data.keyPoints.map((kp) => `* ${kp}`).join("\n");
       }
+      if (data.example) {
+        formattedAnswer += `\n\n### 💡 Example:\n\`\`\`text\n${data.example}\n\`\`\``;
+      }
+
       return {
-        topic: matched.topic,
-        answer: answerText,
+        topic: question.slice(0, 40),
+        answer: formattedAnswer,
         language: languageCode,
+        source: data.source || [],
+        hasRelevantContent: data.hasRelevantContent !== false,
         relatedTopics: [
           "Explain with an illustrative diagram",
           "Provide code implementation / SQL schema",
-          "What are the top 5 viva/exam questions on this topic?"
+          "What are top exam questions on this topic?"
         ]
       };
+    } catch (err) {
+      throw err;
     }
-
-    // 2. Dynamic AI Academic Solver for any custom question
-    let genericAnswer = `### 🎓 Concept Explanation: "${question}"
-
-Here is the step-by-step academic breakdown:
-
-#### 1. Core Principle & Definition
-The concept of **${question}** is an essential subject topic. It involves understanding the fundamental system components, operational workflow, and mathematical/logical constraints.
-
-#### 2. Key Characteristics & Architecture
-* **Primary Objective:** Solves computational and architectural bottlenecks through structured mechanisms.
-* **Operational Flow:** Input processing ➔ transformation ➔ verification ➔ output generation.
-* **Performance Metrics:** Time complexity O(n), throughput, latency, and memory footprint.
-
-#### 3. Practical Example & Industry Use-Case
-Consider a modern software system where scalability and reliability are crucial:
-\`\`\`text
-[Input Request] ➔ [Validation & Processing Engine] ➔ [Optimized Result Output]
-\`\`\`
-
-#### 4. Exam High-Yield Summary
-* Always identify the baseline definitions and formula parameters.
-* Remember the edge cases and error-handling conditions.`;
-
-    if (languageCode !== "en") {
-      genericAnswer = translatorService.translateText(genericAnswer, languageCode, "en");
-    }
-
-    return {
-      topic: `Study Notes: ${question.slice(0, 40)}`,
-      answer: genericAnswer,
-      language: languageCode,
-      relatedTopics: [
-        "Explain with an analogy",
-        "Give a step-by-step mathematical derivation",
-        "What are common mistakes students make on this?"
-      ]
-    };
   }
 };
+

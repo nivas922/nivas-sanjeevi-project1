@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
-import pdfParse from "pdf-parse";
 import { env } from "../config/env.js";
+import { PdfExtractorService } from "./pdfExtractorService.js";
+import { DocumentProcessorService } from "./documentProcessorService.js";
 
 export class StorageService {
   static getFileUrl(fileName) {
@@ -17,13 +18,12 @@ export class StorageService {
       const ext = path.extname(filePath).toLowerCase();
 
       if (ext === ".pdf" || mimeType === "application/pdf") {
-        const fileBuffer = fs.readFileSync(filePath);
-        const parsed = await pdfParse(fileBuffer);
-        return parsed.text || "";
+        const extraction = await PdfExtractorService.extractPagesFromFile(filePath);
+        return extraction.fullText || "";
       }
 
       if (ext === ".txt") {
-        return fs.readFileSync(filePath, "utf-8");
+        return PdfExtractorService.normalizeText(fs.readFileSync(filePath, "utf-8"));
       }
 
       // For scanned images or docs, return descriptive extracted placeholder
@@ -33,4 +33,9 @@ export class StorageService {
       return `Extracted academic textbook content from ${path.basename(filePath)}.`;
     }
   }
+
+  static async processAndStoreDocument({ bookId, filePath, mimeType }) {
+    return await DocumentProcessorService.processDocument({ bookId, filePath, mimeType });
+  }
 }
+

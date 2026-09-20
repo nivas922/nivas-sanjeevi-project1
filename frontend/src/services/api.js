@@ -1,7 +1,7 @@
 import { storageService } from "./storageService";
 import { MULTILINGUAL_SUMMARIES, SUPPORTED_LANGUAGES, DEPARTMENTS } from "../data/translations";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "/api" : "http://localhost:5000/api");
+const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const getAuthHeaders = () => {
@@ -534,6 +534,7 @@ export const api = {
         body: JSON.stringify({
           book_id: textbookId,
           num_questions: questionCount,
+          difficulty,
           language
         })
       });
@@ -544,69 +545,12 @@ export const api = {
           return data.quiz;
         }
       }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || "AI quiz generation is currently unavailable. Please try again later.");
     } catch (err) {
       console.warn("Backend generateQuiz notice:", err.message);
+      throw err;
     }
-
-    const totalQ = Math.max(3, Math.min(25, questionCount));
-    const questionPool = [
-      {
-        q: "What is the primary role of system architecture boundaries in software engineering?",
-        opts: ["To enforce modularity and loose coupling", "To increase memory latency", "To prevent code compilation", "To run multiple processes on a single thread"],
-        correct: 0,
-        exp: "Architecture boundaries isolate subsystems, guaranteeing loose coupling and high cohesion."
-      },
-      {
-        q: "Which state transition occurs deterministically when a system receives a valid input packet?",
-        opts: ["Halt state", "Active Processing State", "Undefined Trap", "Memory Flush State"],
-        correct: 1,
-        exp: "Valid input triggers active processing and state transition in standard deterministic machines."
-      },
-      {
-        q: "What mechanism is utilized to prevent data corruption during simultaneous concurrent executions?",
-        opts: ["Mutual Exclusion (Mutex) & Synchronization", "Uncontrolled Paging", "Random Cache Invalidation", "Infinite Polling Loop"],
-        correct: 0,
-        exp: "Mutex locks and synchronization semaphores preserve atomic access to shared state."
-      },
-      {
-        q: "In mathematical performance evaluation, how is efficiency (η) accurately computed?",
-        opts: ["η = Total Input - Residual Error", "η = (Useful Output / Total Energy Input) × 100%", "η = Round Trip Time × MSS", "η = Clock Cycles / Core Count"],
-        correct: 1,
-        exp: "Efficiency represents the percentage ratio of useful work done over total energy expended."
-      },
-      {
-        q: "What is the key advantage of modular subroutines in large-scale system pipelines?",
-        opts: ["Code reusability, testability, and isolated failure domains", "Guaranteed 100% CPU utilization", "Elimination of binary compilers", "Infinite network throughput"],
-        correct: 0,
-        exp: "Modularity isolates faults and enables independent component verification."
-      }
-    ];
-
-    const selectedQuestions = questionPool.slice(0, totalQ).map((item, idx) => ({
-      id: `q-${Date.now()}-${idx + 1}`,
-      question: item.q,
-      options: item.opts,
-      correctAnswer: item.correct,
-      explanation: item.exp,
-      topic: topic || "Core Fundamentals",
-      difficulty: difficulty
-    }));
-
-    const quiz = {
-      id: "quiz-" + Date.now(),
-      textbookId: textbookId || "tb-1",
-      summaryId: summaryId || null,
-      title: `${topic || "Textbook"} AI Mastery Quiz`,
-      topic: topic || "Core Fundamentals",
-      subject: subject || "Engineering & Computer Science",
-      difficulty: difficulty,
-      timeLimitMinutes: Math.max(5, Math.ceil(totalQ * 1.5)),
-      totalQuestions: selectedQuestions.length,
-      questions: selectedQuestions
-    };
-
-    storageService.addQuiz(quiz);
-    return quiz;
   },
 
   async getSummaries() {
@@ -658,6 +602,29 @@ export const api = {
       console.warn("TTS API notice:", err.message);
     }
     return { status: "fallback" };
+  },
+
+  // Real AI Academic Doubt Solver
+  async askDoubt({ bookId, question, language = "en" }) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/ask-doubt`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          bookId,
+          question,
+          language
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "AI tutor is currently unavailable. Please try again later.");
+      }
+      return data;
+    } catch (err) {
+      console.warn("Backend askDoubt error:", err.message);
+      throw err;
+    }
   },
 
   async submitQuiz(submission) {

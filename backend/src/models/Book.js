@@ -30,6 +30,16 @@ export class Book {
     return rows.map(this.format);
   }
 
+  static async findLatestByUserId(userId) {
+    const row = await dbGet("SELECT * FROM books WHERE user_id = ? ORDER BY upload_date DESC LIMIT 1", [userId]);
+    return this.format(row);
+  }
+
+  static async findLatest() {
+    const row = await dbGet("SELECT * FROM books ORDER BY upload_date DESC LIMIT 1");
+    return this.format(row);
+  }
+
   static async create({ id = uuidv4(), user_id, file_url, title, subject, file_name = null, file_size = 0, extracted_text = "" }) {
     await dbRun(
       `INSERT INTO books (id, user_id, file_url, title, subject, file_name, file_size, extracted_text)

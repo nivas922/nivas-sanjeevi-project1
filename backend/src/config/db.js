@@ -47,8 +47,11 @@ export const dbAll = (sql, params = []) => {
 };
 
 export const initDb = async () => {
-  // Foreign keys enabled
+  // Concurrency & reliability pragmas
   await dbRun("PRAGMA foreign_keys = ON;");
+  await dbRun("PRAGMA journal_mode = WAL;");
+  await dbRun("PRAGMA synchronous = NORMAL;");
+  await dbRun("PRAGMA busy_timeout = 5000;");
 
   // 1. Users table
   await dbRun(`
@@ -218,5 +221,31 @@ export const initDb = async () => {
     );
   `);
 
-  console.log(" Database schema initialized successfully (Users, Books, Summaries, Quizzes, Progress, ActivityLog).");
+  // 8. Document Chunks table (Phase 2 Chunking)
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS document_chunks (
+      id TEXT PRIMARY KEY,
+      book_id TEXT NOT NULL,
+      chapter TEXT,
+      section TEXT,
+      page_start INTEGER DEFAULT 1,
+      page_end INTEGER DEFAULT 1,
+      chunk_index INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    );
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_chunks_book_id ON document_chunks(book_id);`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_books_user_id ON books(user_id);`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_summaries_user_id ON summaries(user_id);`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_summaries_book_id ON summaries(book_id);`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_quizzes_user_id ON quizzes(user_id);`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_quizzes_book_id ON quizzes(book_id);`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_progress_user_id ON progress(user_id);`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_user_id ON activity_log(user_id);`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_otp_identifier ON otp_verifications(identifier);`);
+
+  console.log(" Database schema initialized successfully with production indexes.");
 };
+

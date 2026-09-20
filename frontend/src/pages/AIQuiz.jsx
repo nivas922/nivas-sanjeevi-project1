@@ -167,7 +167,7 @@ export const AIQuiz = () => {
     return (
       <div className="py-20 text-center">
         <Loader2 className="w-8 h-8 text-brand-600 animate-spin mx-auto mb-2" />
-        <p className="text-slate-500">Preparing AI Quiz questions...</p>
+        <p className="text-slate-500 font-semibold">Generating questions from your textbook...</p>
       </div>
     );
   }

@@ -3,7 +3,7 @@ import { api } from "./api";
 export const bookService = {
   uploadBook: (file, metadata, onProgress) => api.uploadTextbook(file, metadata, onProgress),
   getBooks: async () => {
-    const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+    const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "/api" : "/api");
     const token = localStorage.getItem("learnai_auth_token_v3");
     try {
       const res = await fetch(`${API_BASE}/books`, {

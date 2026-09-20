@@ -1,5 +1,6 @@
 import path from "path";
 import { Book } from "../models/Book.js";
+import { DocumentChunk } from "../models/DocumentChunk.js";
 import { Progress } from "../models/Progress.js";
 import { ActivityLog } from "../models/ActivityLog.js";
 import { StorageService } from "../services/storageService.js";
@@ -25,7 +26,7 @@ export class BookController {
       const formattedTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
       const subject = req.body.subject || formattedTitle;
 
-      // Extract text content from file
+      // Extract raw text content from file
       const extractedText = await StorageService.extractDocumentText(file.path, file.mimetype);
 
       // Create book in database
@@ -37,6 +38,13 @@ export class BookController {
         file_name: file.filename,
         file_size: file.size,
         extracted_text: extractedText
+      });
+
+      // Phase 2: Run structured extraction, chapter detection, and text chunking
+      const processingResult = await StorageService.processAndStoreDocument({
+        bookId: book.id,
+        filePath: file.path,
+        mimeType: file.mimetype
       });
 
       // Update progress: increment books studied count for this subject
@@ -56,7 +64,12 @@ export class BookController {
         message: "Textbook uploaded successfully.",
         book_id: book.id,
         bookId: book.id,
-        book
+        book,
+        processingStats: {
+          chaptersCount: processingResult.chaptersCount,
+          sectionsCount: processingResult.sectionsCount,
+          totalChunks: processingResult.totalChunks
+        }
       });
     } catch (error) {
       next(error);
@@ -84,6 +97,9 @@ export class BookController {
       if (!book) {
         return res.status(404).json({ success: false, error: "Book not found." });
       }
+      if (book.user_id && req.userId && book.user_id !== req.userId) {
+        return res.status(403).json({ success: false, error: "You do not have authorization to access this textbook." });
+      }
       return res.status(200).json({
         success: true,
         status: "success",
@@ -93,4 +109,29 @@ export class BookController {
       next(error);
     }
   }
+
+  // GET /books/:id/chunks (Phase 2 Chunk Access Endpoint)
+  static async getBookChunks(req, res, next) {
+    try {
+      const bookId = req.params.id;
+      const book = await Book.findById(bookId);
+      if (!book) {
+        return res.status(404).json({ success: false, error: "Book not found." });
+      }
+      if (book.user_id && req.userId && book.user_id !== req.userId) {
+        return res.status(403).json({ success: false, error: "You do not have authorization to access this textbook's chunks." });
+      }
+      const chunks = await DocumentChunk.findByBookId(bookId);
+      return res.status(200).json({
+        success: true,
+        status: "success",
+        book_id: bookId,
+        totalChunks: chunks.length,
+        chunks
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
+

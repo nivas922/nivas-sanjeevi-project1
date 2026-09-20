@@ -107,6 +107,20 @@ CREATE TABLE IF NOT EXISTS otp_verifications (
     UNIQUE(identifier, type)
 );
 
+-- 8. Document Chunks Table (Phase 2 Chunking & Metadata)
+CREATE TABLE IF NOT EXISTS document_chunks (
+    id VARCHAR(64) PRIMARY KEY,
+    book_id VARCHAR(64) NOT NULL,
+    chapter VARCHAR(255),
+    section VARCHAR(255),
+    page_start INT DEFAULT 1,
+    page_end INT DEFAULT 1,
+    chunk_index INT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+);
+
 -- Indexes for high-frequency queries
 CREATE INDEX IF NOT EXISTS idx_books_user_id ON books(user_id);
 CREATE INDEX IF NOT EXISTS idx_summaries_user_id ON summaries(user_id);
@@ -114,3 +128,5 @@ CREATE INDEX IF NOT EXISTS idx_summaries_book_id ON summaries(book_id);
 CREATE INDEX IF NOT EXISTS idx_quizzes_user_id ON quizzes(user_id);
 CREATE INDEX IF NOT EXISTS idx_progress_user_id ON progress(user_id);
 CREATE INDEX IF NOT EXISTS idx_activity_user_id ON activity_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_book_id ON document_chunks(book_id);
+

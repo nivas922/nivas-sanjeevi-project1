@@ -25,8 +25,9 @@ export class SummaryController {
         return res.status(404).json({ success: false, error: "Book not found with provided ID." });
       }
 
-      // Generate multilingual AI summary
+      // Generate full-document AI summary via Phase 3 Gemini Pipeline
       const aiResult = await AiService.generateSummary({
+        bookId: book.id,
         bookTitle: book.title,
         subject: book.subject,
         text: book.extractedText || "",
@@ -39,6 +40,12 @@ export class SummaryController {
         language: targetLanguage
       });
 
+      // Combine quickRevision array with chapter breakdown metadata
+      const quickRevisionPayload = {
+        revisionPoints: aiResult.quickRevision || [],
+        chapters: aiResult.chapters || []
+      };
+
       // Save summary to database
       const summary = await Summary.create({
         book_id: book.id,
@@ -49,9 +56,10 @@ export class SummaryController {
         definitions: aiResult.definitions || [],
         formulas: aiResult.formulas || [],
         examples: aiResult.examples || [],
-        quick_revision: aiResult.quickRevision || [],
+        quick_revision: quickRevisionPayload,
         audio_url: ttsResult.audioUrl
       });
+
 
       // Update progress for user & subject
       await Progress.incrementSummaryCount(req.userId, book.subject);
@@ -105,6 +113,9 @@ export class SummaryController {
       if (!summary) {
         return res.status(404).json({ success: false, error: "Summary not found." });
       }
+      if (summary.user_id && req.userId && summary.user_id !== req.userId) {
+        return res.status(403).json({ success: false, error: "You do not have authorization to access this summary." });
+      }
       return res.status(200).json({
         success: true,
         status: "success",
@@ -125,20 +136,17 @@ export class SummaryController {
       if (!summary) {
         return res.status(404).json({ success: false, error: "Summary not found." });
       }
+      if (summary.user_id && req.userId && summary.user_id !== req.userId) {
+        return res.status(403).json({ success: false, error: "You do not have authorization to translate this summary." });
+      }
 
-      const book = await Book.findById(summary.book_id);
-      const localized = TranslationService.getLocalizedSummaryData(targetLang, book ? book.title : "Textbook");
+      const translated = await TranslationService.translateSummaryObject(summary, targetLang);
 
       return res.status(200).json({
         success: true,
         status: "success",
         language: targetLang,
-        translation: {
-          summaryText: localized.summaryText,
-          simpleExplanation: localized.simpleExplanation,
-          keyPoints: localized.keyPoints,
-          definitions: localized.definitions
-        }
+        translation: translated
       });
     } catch (error) {
       next(error);

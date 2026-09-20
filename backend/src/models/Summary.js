@@ -8,13 +8,16 @@ export class Summary {
     let definitions = [];
     let formulas = [];
     let examples = [];
-    let quickRevision = [];
-
     try { keyConcepts = JSON.parse(row.key_concepts_json || "[]"); } catch {}
     try { definitions = JSON.parse(row.definitions_json || "[]"); } catch {}
     try { formulas = JSON.parse(row.formulas_json || "[]"); } catch {}
     try { examples = JSON.parse(row.examples_json || "[]"); } catch {}
-    try { quickRevision = JSON.parse(row.quick_revision_json || "[]"); } catch {}
+    let rawQuickRev = [];
+    try { rawQuickRev = JSON.parse(row.quick_revision_json || "[]"); } catch {}
+
+    const quickRevision = Array.isArray(rawQuickRev) ? rawQuickRev : (rawQuickRev?.revisionPoints || []);
+    const chapters = Array.isArray(rawQuickRev?.chapters) ? rawQuickRev.chapters : [];
+
 
     return {
       id: row.id,
@@ -30,12 +33,14 @@ export class Summary {
       formulas,
       examples,
       quickRevision,
+      chapters,
       audio_url: row.audio_url,
       audioUrl: row.audio_url,
       created_at: row.created_at,
       createdAt: row.created_at
     };
   }
+
 
   static async findById(id) {
     const row = await dbGet("SELECT * FROM summaries WHERE id = ?", [id]);

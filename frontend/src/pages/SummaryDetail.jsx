@@ -311,6 +311,36 @@ export const SummaryDetail = () => {
         </div>
       )}
 
+      {/* Chapter-wise Summaries Breakdown */}
+      {summary.chapters && summary.chapters.length > 0 && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-soft-sm space-y-4">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+            <BookOpen className="w-5 h-5 text-brand-600" />
+            <h3 className="text-base font-bold text-slate-900">
+              Chapter-wise Academic Breakdown
+            </h3>
+          </div>
+          <div className="space-y-4">
+            {summary.chapters.map((chap, idx) => (
+              <div key={idx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-sm font-bold text-slate-900">{chap.chapter}</h4>
+                  {chap.sourcePages && (
+                    <span className="text-[11px] font-bold text-slate-600 bg-white px-2.5 py-0.5 rounded-md border border-slate-200">
+                      Pages {chap.sourcePages}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-normal">
+                  {chap.overview}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+
       {/* Dynamic AI Quiz Generator CTA with Custom / Preset Question Count Selector */}
       <div className="bg-gradient-to-r from-brand-900 via-indigo-900 to-purple-900 rounded-3xl p-6 sm:p-8 text-white shadow-soft-lg flex flex-col md:flex-row items-center justify-between gap-6">
         <div>

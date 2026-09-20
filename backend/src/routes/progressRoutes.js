@@ -10,4 +10,8 @@ router.get("/progress/:user_id", authGuard, ProgressController.getProgress);
 // GET /activity/:user_id
 router.get("/activity/:user_id", authGuard, ProgressController.getActivity);
 
+// GET /adaptive-learning & GET /adaptive-learning/:bookId
+router.get("/adaptive-learning", authGuard, ProgressController.getAdaptiveLearning);
+router.get("/adaptive-learning/:bookId", authGuard, ProgressController.getAdaptiveLearning);
+
 export default router;

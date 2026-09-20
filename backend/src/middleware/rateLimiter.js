@@ -1,9 +1,9 @@
 import rateLimit from "express-rate-limit";
 
-// Rate limiting on OTP generation / verification: 5 requests per 10 minutes
+// Rate limiting on OTP generation / verification: 10 requests per 10 minutes
 export const otpRateLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  max: 10, // Generous for testing, prevents brute-force
+  max: 10,
   message: {
     success: false,
     error: "Too many OTP requests from this address. Please try again after 10 minutes."
@@ -12,7 +12,31 @@ export const otpRateLimiter = rateLimit({
   legacyHeaders: false
 });
 
-// Rate limiting on AI API calls (summarization, quiz generation, TTS): 30 requests per minute
+// Auth Rate Limiter on login, signup, password reset (20 requests per 15 min)
+export const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: {
+    success: false,
+    error: "Too many authentication attempts from this IP address. Please try again after 15 minutes."
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Upload Rate Limiter (30 file uploads per 15 min)
+export const uploadRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: {
+    success: false,
+    error: "Document upload limit exceeded. Please wait a few minutes before uploading additional textbooks."
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Rate limiting on AI API calls (summarization, quiz generation, TTS, doubt solver): 30 requests per minute
 export const aiRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
@@ -24,7 +48,7 @@ export const aiRateLimiter = rateLimit({
   legacyHeaders: false
 });
 
-// General API rate limiter
+// General API rate limiter (300 requests per 15 min)
 export const apiRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,

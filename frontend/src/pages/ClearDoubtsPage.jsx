@@ -26,14 +26,21 @@ import { Button } from "../components/common/Button";
 
 export const ClearDoubtsPage = () => {
   const { user } = useAuth();
-  const { activeLanguage } = useLearning();
-  const { showSuccess, showInfo } = useToast();
+  const { activeLanguage, textbooks } = useLearning();
+  const { showSuccess, showInfo, showWarning } = useToast();
 
   const [selectedLanguage, setSelectedLanguage] = useState(activeLanguage || "en");
+  const [selectedBookId, setSelectedBookId] = useState(textbooks && textbooks.length > 0 ? textbooks[0].id : "");
   const [inputQuery, setInputQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [speakingId, setSpeakingId] = useState(null);
+
+  useEffect(() => {
+    if (!selectedBookId && textbooks && textbooks.length > 0) {
+      setSelectedBookId(textbooks[0].id);
+    }
+  }, [textbooks]);
 
   const messagesEndRef = useRef(null);
 
@@ -45,24 +52,22 @@ export const ClearDoubtsPage = () => {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       text: `👋 **Hello ${user?.name ? user.name.split(" ")[0] : "Student"}!** I am your **AI Academic Doubt Solver & Study Assistant**.
 
-Ask me any concept, formula, coding question, or textbook doubt. I can explain step-by-step in **English, Tamil (தமிழ்), Hindi (हिन्दी), Telugu (తెలుగు), Kannada (ಕನ್ನಡ), Malayalam (മലയാളം), or Bengali (বাংলা)**!
+Ask me any concept, formula, coding question, or textbook doubt from your uploaded textbook. I will retrieve exact textbook sections and explain step-by-step in **English, Tamil (தமிழ்), Hindi (हिन्दी), Telugu (తెలుగు), Kannada (ಕನ್ನಡ), Malayalam (മലയാളം), or Bengali (বাংলা)**!
 
-You can also click the **🔊 Read Aloud** button on any response to listen to audio narration.`,
+Select a textbook from the dropdown above to start.`,
       relatedTopics: [
-        "Explain TCP 3-Way Handshake step-by-step",
-        "Difference between Process and Thread",
-        "Explain Database Normalization (1NF, 2NF, 3NF)"
+        "Explain key concepts from this textbook",
+        "Summarize main formulas",
+        "What are top exam questions on this textbook?"
       ]
     }
   ]);
 
   const quickPrompts = [
-    { title: "🌐 TCP 3-Way Handshake", prompt: "Explain TCP 3-Way Handshake step-by-step with sequence numbers" },
-    { title: "⚡ Process vs Thread", prompt: "What is the difference between Process and Thread in OS?" },
-    { title: "🗄️ Database Normalization", prompt: "Explain Database Normalization 1NF, 2NF, 3NF with an example" },
-    { title: "📐 Mathis Formula", prompt: "Explain Mathis Throughput formula for TCP" },
-    { title: "🔍 Dijkstra's Algorithm", prompt: "Explain Dijkstra's shortest path algorithm step-by-step" },
-    { title: "🤖 Supervised vs Unsupervised ML", prompt: "What is the difference between Supervised and Unsupervised Learning?" }
+    { title: "📖 Key Concepts", prompt: "Explain the core concepts covered in this textbook chapter-by-chapter." },
+    { title: "📐 Formulas & Theorems", prompt: "List and explain all major formulas and theorems in this textbook." },
+    { title: "❓ Important Q&A", prompt: "What are the most important exam questions and answers from this textbook?" },
+    { title: "⚡ Quick Summary", prompt: "Provide a comprehensive summary of the main topics in this textbook." }
   ];
 
   const scrollToBottom = () => {
@@ -76,6 +81,17 @@ You can also click the **🔊 Read Aloud** button on any response to listen to a
   const handleSendMessage = async (textToSend = inputQuery) => {
     if (!textToSend || textToSend.trim().length === 0) return;
 
+    if (!selectedBookId && textbooks && textbooks.length > 0) {
+      setSelectedBookId(textbooks[0].id);
+    }
+
+    const currentBookId = selectedBookId || (textbooks && textbooks[0] ? textbooks[0].id : null);
+
+    if (!currentBookId) {
+      showWarning("Please upload a textbook first before asking doubts.");
+      return;
+    }
+
     const userMessage = {
       id: `user-${Date.now()}`,
       sender: "user",
@@ -88,18 +104,19 @@ You can also click the **🔊 Read Aloud** button on any response to listen to a
     setLoading(true);
 
     try {
-      const response = await aiTutorService.askDoubt(textToSend, selectedLanguage);
+      const response = await aiTutorService.askDoubt(textToSend, selectedLanguage, currentBookId);
       const aiResponse = {
         id: `ai-${Date.now()}`,
         sender: "ai",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         text: response.answer,
         topic: response.topic,
+        source: response.source || [],
         relatedTopics: response.relatedTopics
       };
       setMessages((prev) => [...prev, aiResponse]);
     } catch (err) {
-      showInfo("Could not process query. Please try again.");
+      showInfo(err.message || "AI tutor is currently unavailable. Please try again later.");
     } finally {
       setLoading(false);
     }
@@ -166,23 +183,42 @@ You can also click the **🔊 Read Aloud** button on any response to listen to a
           </p>
         </div>
 
-        {/* Language selector & reset */}
+        {/* Textbook & Language selector bar */}
         <div className="flex flex-wrap items-center gap-2 bg-white/10 p-2.5 rounded-2xl backdrop-blur-md border border-white/15">
-          <Languages className="w-4 h-4 text-white/80" />
-          <select
-            value={selectedLanguage}
-            onChange={(e) => {
-              setSelectedLanguage(e.target.value);
-              showSuccess(`Tutor language set to ${SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)?.name}`);
-            }}
-            className="bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-white cursor-pointer"
-          >
-            {SUPPORTED_LANGUAGES.map((lang) => (
-              <option key={lang.code} value={lang.code} className="text-slate-900 font-semibold">
-                {lang.flag} {lang.name} ({lang.nativeName})
-              </option>
-            ))}
-          </select>
+          {textbooks && textbooks.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-xl border border-white/20">
+              <BookOpen className="w-4 h-4 text-white" />
+              <select
+                value={selectedBookId}
+                onChange={(e) => setSelectedBookId(e.target.value)}
+                className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer max-w-[180px] truncate"
+              >
+                {textbooks.map((b) => (
+                  <option key={b.id} value={b.id} className="text-slate-900 font-semibold">
+                    {b.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-xl border border-white/20">
+            <Languages className="w-4 h-4 text-white/80" />
+            <select
+              value={selectedLanguage}
+              onChange={(e) => {
+                setSelectedLanguage(e.target.value);
+                showSuccess(`Tutor language set to ${SUPPORTED_LANGUAGES.find(l => l.code === e.target.value)?.name}`);
+              }}
+              className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer"
+            >
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <option key={lang.code} value={lang.code} className="text-slate-900 font-semibold">
+                  {lang.flag} {lang.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <button
             onClick={handleClearChat}
@@ -301,6 +337,23 @@ You can also click the **🔊 Read Aloud** button on any response to listen to a
                     </div>
                   )}
 
+                  {/* Source Traceability Badges */}
+                  {!isUser && msg.source && msg.source.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200/60 text-xs">
+                      <span className="font-bold text-slate-500 uppercase tracking-wider block mb-1 flex items-center gap-1">
+                        <BookOpen className="w-3.5 h-3.5 text-brand-600" />
+                        Textbook Source Traceability:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {msg.source.map((s, idx) => (
+                          <span key={idx} className="bg-brand-50 text-brand-700 font-semibold px-2.5 py-1 rounded-lg border border-brand-200 text-[11px]">
+                            {s.chapter || 'Overview'} • {s.section || 'General'} (Pages {s.pageStart}-{s.pageEnd})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Follow-up question chips */}
                   {!isUser && msg.relatedTopics && msg.relatedTopics.length > 0 && (
                     <div className="pt-2 space-y-1.5">
@@ -330,7 +383,7 @@ You can also click the **🔊 Read Aloud** button on any response to listen to a
               </div>
               <div className="p-4 rounded-3xl bg-slate-100 rounded-tl-xs border border-slate-200 text-xs font-bold text-slate-600 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-brand-600 animate-ping" />
-                <span>AI Tutor is analyzing concept and drafting step-by-step explanation...</span>
+                <span>Thinking about your question...</span>
               </div>
             </div>
           )}
