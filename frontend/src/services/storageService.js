@@ -1,4 +1,4 @@
-import { INITIAL_SUBJECT_PROGRESS, DEPARTMENTS } from "../data/translations";
+import { INITIAL_SUBJECT_PROGRESS, DEPARTMENTS } from "../data/translations.js";
 
 const STORAGE_KEYS = {
   USER: "learnai_user_v3",
@@ -44,15 +44,20 @@ export const storageService = {
       userData.department || DEPARTMENTS[0],
       userData.avatar
     );
+    if (userData.id) freshUser.id = userData.id;
+    if (userData.email) freshUser.email = userData.email;
+    if (userData.role) freshUser.role = userData.role;
+    if (userData.auth_provider) freshUser.auth_provider = userData.auth_provider;
+
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(freshUser));
-    localStorage.setItem(STORAGE_KEYS.TEXTBOOKS, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.SUMMARIES, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.QUIZZES, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.QUIZ_ATTEMPTS, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.RECOMMENDATIONS, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.SUBJECT_PROGRESS, JSON.stringify([])); // Empty by default
-    localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify([]));
-    localStorage.setItem(STORAGE_KEYS.TOKEN, "jwt_token_" + Date.now());
+    if (!localStorage.getItem(STORAGE_KEYS.TEXTBOOKS)) localStorage.setItem(STORAGE_KEYS.TEXTBOOKS, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.SUMMARIES)) localStorage.setItem(STORAGE_KEYS.SUMMARIES, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.QUIZZES)) localStorage.setItem(STORAGE_KEYS.QUIZZES, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.QUIZ_ATTEMPTS)) localStorage.setItem(STORAGE_KEYS.QUIZ_ATTEMPTS, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.RECOMMENDATIONS)) localStorage.setItem(STORAGE_KEYS.RECOMMENDATIONS, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.SUBJECT_PROGRESS)) localStorage.setItem(STORAGE_KEYS.SUBJECT_PROGRESS, JSON.stringify([]));
+    if (!localStorage.getItem(STORAGE_KEYS.ACTIVITIES)) localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify([]));
+    // NOTE: Tokens must ONLY be stored by setToken() after genuine backend authentication.
     return freshUser;
   },
 
@@ -110,8 +115,9 @@ export const storageService = {
   },
 
   getSummaryById(id) {
+    if (!id) return null;
     const list = this.getSummaries();
-    return list.find(s => s.id === id) || list[0] || null;
+    return list.find(s => s.id === id) || null;
   },
 
   addSummary(summary) {
@@ -135,8 +141,9 @@ export const storageService = {
   },
 
   getQuizById(id) {
+    if (!id) return null;
     const list = this.getQuizzes();
-    return list.find(q => q.id === id) || list[0] || null;
+    return list.find(q => q.id === id) || null;
   },
 
   addQuiz(quiz) {
@@ -269,7 +276,19 @@ export const storageService = {
   },
 
   getToken() {
-    return localStorage.getItem(STORAGE_KEYS.TOKEN);
+    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
+    if (!token) return null;
+    // Discard any legacy fake/mock tokens or malformed non-JWT strings
+    if (
+      token.startsWith("mock_") ||
+      token.startsWith("jwt_token_") ||
+      token === "demo_google_id_token_12345" ||
+      token.split(".").length !== 3
+    ) {
+      localStorage.removeItem(STORAGE_KEYS.TOKEN);
+      return null;
+    }
+    return token;
   },
 
   setToken(token) {

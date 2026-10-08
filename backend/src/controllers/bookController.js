@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import { Book } from "../models/Book.js";
 import { DocumentChunk } from "../models/DocumentChunk.js";
@@ -27,7 +28,18 @@ export class BookController {
       const subject = req.body.subject || formattedTitle;
 
       // Extract raw text content from file
-      const extractedText = await StorageService.extractDocumentText(file.path, file.mimetype);
+      let extractedText;
+      try {
+        extractedText = await StorageService.extractDocumentText(file.path, file.mimetype);
+      } catch (extractError) {
+        if (fs.existsSync(file.path)) {
+          try { fs.unlinkSync(file.path); } catch {}
+        }
+        return res.status(extractError.statusCode || 400).json({
+          success: false,
+          error: extractError.message || "Failed to extract text from document."
+        });
+      }
 
       // Create book in database
       const book = await Book.create({
@@ -41,11 +53,23 @@ export class BookController {
       });
 
       // Phase 2: Run structured extraction, chapter detection, and text chunking
-      const processingResult = await StorageService.processAndStoreDocument({
-        bookId: book.id,
-        filePath: file.path,
-        mimeType: file.mimetype
-      });
+      let processingResult;
+      try {
+        processingResult = await StorageService.processAndStoreDocument({
+          bookId: book.id,
+          filePath: file.path,
+          mimeType: file.mimetype
+        });
+      } catch (procError) {
+        if (fs.existsSync(file.path)) {
+          try { fs.unlinkSync(file.path); } catch {}
+        }
+        await Book.deleteById(book.id);
+        return res.status(procError.statusCode || 400).json({
+          success: false,
+          error: procError.message || "Failed to process and chunk document."
+        });
+      }
 
       // Update progress: increment books studied count for this subject
       await Progress.incrementBookCount(userId, subject);
@@ -72,6 +96,9 @@ export class BookController {
         }
       });
     } catch (error) {
+      if (req.file && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch {}
+      }
       next(error);
     }
   }

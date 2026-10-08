@@ -48,15 +48,54 @@ export const SummaryDetail = () => {
   const [customQuestionCount, setCustomQuestionCount] = useState(8);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
 
+  const [loadingSummary, setLoadingSummary] = useState(true);
+
   useEffect(() => {
-    const found = summaries.find((s) => s.id === id) || summaries[0];
-    setSummary(found);
+    let isMounted = true;
+    const loadSummary = async () => {
+      // 1. Try local/context summaries
+      const found = summaries.find((s) => s.id === id);
+      if (found) {
+        if (isMounted) {
+          setSummary(found);
+          setLoadingSummary(false);
+        }
+        return;
+      }
+
+      // 2. Fetch directly from API
+      try {
+        const backendSummary = await api.getSummaryById(id);
+        if (isMounted) {
+          setSummary(backendSummary || null);
+          setLoadingSummary(false);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setSummary(null);
+          setLoadingSummary(false);
+        }
+      }
+    };
+
+    loadSummary();
+    return () => {
+      isMounted = false;
+    };
   }, [id, summaries]);
+
+  if (loadingSummary) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-slate-500 font-medium">Loading summary...</p>
+      </div>
+    );
+  }
 
   if (!summary) {
     return (
       <div className="text-center py-20">
-        <p className="text-slate-500">No summary found. Please upload a textbook to generate summaries.</p>
+        <p className="text-slate-500 font-medium">Summary not found. The requested summary ID does not exist.</p>
         <Button onClick={() => navigate("/upload")} variant="primary" className="mt-4">
           Upload Textbook
         </Button>
@@ -65,8 +104,11 @@ export const SummaryDetail = () => {
   }
 
   const handleCopy = () => {
+    const topicText = summary.topic || summary.bookTitle || "Summary";
+    const summaryBody = summary.summaryText || summary.summary_text || "";
+    const explanationText = summary.simpleExplanation || summary.simple_explanation || "";
     navigator.clipboard.writeText(
-      `${summary.topic}\n\nSummary:\n${summary.summaryText}\n\nSimplified Explanation:\n${summary.simpleExplanation}`
+      `${topicText}\n\nSummary:\n${summaryBody}\n\nSimplified Explanation:\n${explanationText}`
     );
     setCopied(true);
     showSuccess("Summary copied to clipboard!");
@@ -98,7 +140,7 @@ export const SummaryDetail = () => {
     const finalCount = getFinalQuestionCount();
     try {
       const newQuiz = await api.generateQuiz({
-        textbookId: summary.textbookId,
+        textbookId: summary.textbookId || summary.book_id || summary.bookId,
         summaryId: summary.id,
         topic: summary.topic,
         subject: summary.bookTitle,
@@ -204,7 +246,7 @@ export const SummaryDetail = () => {
 
       {/* Embedded Multilingual Text-to-Speech Audio Player */}
       <TextToSpeech
-        text={`${summary.topic}. ${summary.summaryText}. ${summary.simpleExplanation || ""}`}
+        text={`${summary.topic || summary.bookTitle || ""}. ${summary.summaryText || summary.summary_text || ""}. ${summary.simpleExplanation || summary.simple_explanation || ""}`}
         title={`Audio Narration (${currentLangObj.name} - ${currentLangObj.native})`}
         initialLang={summary.language || "en"}
       />
@@ -218,10 +260,10 @@ export const SummaryDetail = () => {
           </h3>
         </div>
         <p className="text-sm sm:text-base text-slate-700 leading-relaxed font-normal">
-          {summary.summaryText}
+          {summary.summaryText || summary.summary_text}
         </p>
 
-        {summary.simpleExplanation && (
+        {(summary.simpleExplanation || summary.simple_explanation) && (
           <div className="mt-4 p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-start gap-3">
             <span className="text-xl">💡</span>
             <div>
@@ -229,7 +271,7 @@ export const SummaryDetail = () => {
                 Beginner Intuition (Explain Simply)
               </span>
               <p className="text-xs sm:text-sm text-amber-950 leading-relaxed font-medium">
-                {summary.simpleExplanation}
+                {summary.simpleExplanation || summary.simple_explanation}
               </p>
             </div>
           </div>

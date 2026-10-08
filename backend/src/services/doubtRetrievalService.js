@@ -42,8 +42,8 @@ export class DoubtRetrievalService {
 
     if (effectiveTokens.length === 0) {
       return {
-        chunks: [allChunks[0]],
-        hasRelevantContent: true
+        chunks: [],
+        hasRelevantContent: false
       };
     }
 
@@ -62,13 +62,16 @@ export class DoubtRetrievalService {
         const occurrences = (textLower.match(regex) || []).length;
         score += occurrences * 3;
 
-        // Substring match in text
-        if (occurrences === 0 && textLower.includes(token)) {
-          score += 1;
+        // Word-boundary prefix match (e.g. "connect" matching "connection", min 4 chars to avoid false positives like "ack" in "packets")
+        if (occurrences === 0 && token.length >= 4) {
+          const prefixRegex = new RegExp(`\\b${escapeRegExp(token)}`, "gi");
+          const prefixOccurrences = (textLower.match(prefixRegex) || []).length;
+          score += prefixOccurrences * 1;
         }
 
         // Chapter / Section title match bonus
-        if (chapLower.includes(token) || secLower.includes(token)) {
+        const titleRegex = new RegExp(`\\b${escapeRegExp(token)}\\b`, "gi");
+        if (titleRegex.test(chapLower) || titleRegex.test(secLower)) {
           score += 5;
         }
       }
@@ -78,8 +81,12 @@ export class DoubtRetrievalService {
       }
     }
 
-    // 4. Rank by relevance score descending
-    scoredChunks.sort((a, b) => b.score - a.score);
+    // 4. Rank by relevance score descending with deterministic tie-breaker
+    scoredChunks.sort(
+      (a, b) =>
+        b.score - a.score ||
+        ((a.chunk.chunkIndex ?? a.chunk.chunk_index ?? 0) - (b.chunk.chunkIndex ?? b.chunk.chunk_index ?? 0))
+    );
 
     if (scoredChunks.length === 0) {
       return { chunks: [], hasRelevantContent: false };

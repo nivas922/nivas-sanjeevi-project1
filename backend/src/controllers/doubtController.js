@@ -5,9 +5,17 @@ export class DoubtController {
   // POST /ask-doubt
   static async askDoubt(req, res, next) {
     try {
-      const { bookId, book_id, question, language, target_language } = req.body;
-      const targetBookId = bookId || book_id;
-      const targetLang = language || target_language || req.user?.preferred_language || "en";
+      const body = req.body || {};
+      const targetBookId = body.bookId || body.book_id;
+      const question = body.question;
+      const targetLang = typeof body.language === "string" ? body.language : (typeof body.target_language === "string" ? body.target_language : (req.user?.preferred_language || "en"));
+
+      if (!targetBookId || typeof targetBookId !== "string" || targetBookId.trim().length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "bookId is required."
+        });
+      }
 
       if (!question || typeof question !== "string" || question.trim().length === 0) {
         return res.status(400).json({
@@ -20,13 +28,6 @@ export class DoubtController {
         return res.status(400).json({
           success: false,
           error: "Question is too long (maximum 1000 characters)."
-        });
-      }
-
-      if (!targetBookId) {
-        return res.status(400).json({
-          success: false,
-          error: "bookId is required."
         });
       }
 

@@ -29,10 +29,14 @@ export const FloatingDoubtSolver = () => {
   const [selectedLanguage, setSelectedLanguage] = useState("en");
 
   const { user } = useAuth();
-  const { activeLanguage } = useLearning();
+  const { activeLanguage, textbooks, currentBook } = useLearning();
   const { showSuccess } = useToast();
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
+
+  const [selectedBookId, setSelectedBookId] = useState(
+    currentBook?.id || (textbooks && textbooks.length === 1 ? textbooks[0].id : "")
+  );
 
   useEffect(() => {
     if (activeLanguage) {
@@ -40,12 +44,20 @@ export const FloatingDoubtSolver = () => {
     }
   }, [activeLanguage]);
 
+  useEffect(() => {
+    if (!selectedBookId && currentBook?.id) {
+      setSelectedBookId(currentBook.id);
+    } else if (!selectedBookId && textbooks && textbooks.length === 1) {
+      setSelectedBookId(textbooks[0].id);
+    }
+  }, [currentBook, textbooks]);
+
   const [messages, setMessages] = useState([
     {
       id: "float-welcome",
       sender: "ai",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      text: `👋 Got a doubt while reading? Ask me anything and I'll explain step-by-step in your chosen language!`
+      text: `👋 Got a doubt while reading? Select your textbook and ask me anything. I will retrieve the exact textbook section and explain step-by-step!`
     }
   ]);
 
@@ -62,6 +74,17 @@ export const FloatingDoubtSolver = () => {
   const handleSend = async (query = inputQuery) => {
     if (!query || query.trim().length === 0) return;
 
+    if (!selectedBookId) {
+      const warnMsg = {
+        id: `warn-${Date.now()}`,
+        sender: "ai",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        text: "⚠️ Please select a textbook from the top dropdown before asking doubts."
+      };
+      setMessages((prev) => [...prev, warnMsg]);
+      return;
+    }
+
     const userMsg = {
       id: `usr-${Date.now()}`,
       sender: "user",
@@ -74,7 +97,7 @@ export const FloatingDoubtSolver = () => {
     setLoading(true);
 
     try {
-      const res = await aiTutorService.askDoubt(query, selectedLanguage);
+      const res = await aiTutorService.askDoubt(query, selectedLanguage, selectedBookId);
       const aiMsg = {
         id: `ai-${Date.now()}`,
         sender: "ai",
@@ -84,7 +107,13 @@ export const FloatingDoubtSolver = () => {
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (e) {
-      //
+      const errMsg = {
+        id: `err-${Date.now()}`,
+        sender: "ai",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        text: `⚠️ ${e.message || "Failed to solve doubt. Please try again."}`
+      };
+      setMessages((prev) => [...prev, errMsg]);
     } finally {
       setLoading(false);
     }
@@ -140,6 +169,24 @@ export const FloatingDoubtSolver = () => {
             </div>
 
             <div className="flex items-center gap-1">
+              {textbooks && textbooks.length > 0 && (
+                <select
+                  value={selectedBookId}
+                  onChange={(e) => setSelectedBookId(e.target.value)}
+                  className="bg-white/20 text-white text-[11px] font-bold px-2 py-1 rounded-lg focus:outline-none cursor-pointer max-w-[110px] truncate"
+                  title="Select Textbook"
+                >
+                  <option value="" className="text-slate-900 font-semibold">
+                    Select Book
+                  </option>
+                  {textbooks.map((b) => (
+                    <option key={b.id} value={b.id} className="text-slate-900 font-semibold">
+                      {b.title}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               <select
                 value={selectedLanguage}
                 onChange={(e) => setSelectedLanguage(e.target.value)}

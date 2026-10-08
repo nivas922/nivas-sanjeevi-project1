@@ -1,15 +1,127 @@
-import { storageService } from "./storageService";
-import { MULTILINGUAL_SUMMARIES, SUPPORTED_LANGUAGES, DEPARTMENTS } from "../data/translations";
+import { storageService } from "./storageService.js";
+import { SUPPORTED_LANGUAGES, DEPARTMENTS } from "../data/translations.js";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
+const API_BASE_URL = import.meta.env?.VITE_API_URL || "/api";
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-const getAuthHeaders = () => {
+export const getAuthHeaders = () => {
   const token = storageService.getToken();
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
+};
+
+/**
+ * Robust HTTP Response Validator & Error Extractor
+ * Handles 400, 401, 403, 404, 409, 422, 429, 500, 503, 530 transparently.
+ */
+export const handleApiResponse = async (res) => {
+  if (res.ok) {
+    return await res.json();
+  }
+
+  let errorData = null;
+  try {
+    errorData = await res.json();
+  } catch {
+    errorData = null;
+  }
+
+  const backendMessage = errorData?.error || errorData?.message;
+
+  // 401 Unauthorized: clear authentication state immediately
+  if (res.status === 401) {
+    storageService.removeToken();
+    const err = new Error(backendMessage || "Your session has expired. Please sign in again.");
+    err.status = 401;
+    throw err;
+  }
+
+  // 403 Forbidden
+  if (res.status === 403) {
+    const err = new Error(backendMessage || "You do not have permission to perform this action.");
+    err.status = 403;
+    throw err;
+  }
+
+  // 404 Not Found
+  if (res.status === 404) {
+    const err = new Error(backendMessage || "The requested resource was not found.");
+    err.status = 404;
+    throw err;
+  }
+
+  // 400 Bad Request
+  if (res.status === 400) {
+    const err = new Error(backendMessage || "Invalid request. Please check your input.");
+    err.status = 400;
+    throw err;
+  }
+
+  // 409 Conflict
+  if (res.status === 409) {
+    const err = new Error(backendMessage || "A conflict occurred with this resource.");
+    err.status = 409;
+    throw err;
+  }
+
+  // 422 Unprocessable Entity
+  if (res.status === 422) {
+    const err = new Error(backendMessage || "The provided data could not be processed.");
+    err.status = 422;
+    throw err;
+  }
+
+  // 429 Too Many Requests
+  if (res.status === 429) {
+    const err = new Error(backendMessage || "Too many requests. Please wait a moment and try again.");
+    err.status = 429;
+    throw err;
+  }
+
+  // 503 Service Unavailable / 530
+  if (res.status === 503 || res.status === 530) {
+    const err = new Error(backendMessage || "The AI service is currently unavailable. Please try again later.");
+    err.status = res.status;
+    throw err;
+  }
+
+  // 500 Internal Server Error & general 5xx
+  if (res.status >= 500) {
+    const err = new Error(backendMessage || "The server encountered an error. Please try again.");
+    err.status = res.status;
+    throw err;
+  }
+
+  const err = new Error(backendMessage || `Request failed with status ${res.status}.`);
+  err.status = res.status;
+  throw err;
+};
+
+/**
+ * Network and connectivity failure handler
+ */
+export const handleNetworkError = (err) => {
+  if (err.status) {
+    throw err;
+  }
+
+  console.error("Network or API communication failure:", err);
+  const isNetworkFailure =
+    err.name === "TypeError" ||
+    err.message?.includes("Failed to fetch") ||
+    err.message?.includes("NetworkError") ||
+    err.message?.includes("connection refused") ||
+    err.message?.includes("timeout");
+
+  if (isNetworkFailure) {
+    const netErr = new Error("Unable to connect to the backend server. Please check your connection and try again.");
+    netErr.isNetworkError = true;
+    throw netErr;
+  }
+
+  throw err;
 };
 
 export const api = {
@@ -24,32 +136,12 @@ export const api = {
           department
         })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Google authentication verification failed.");
-      }
-
+      const data = await handleApiResponse(res);
       storageService.setToken(data.token);
       storageService.initNewUser(data.user);
       return { status: "success", user: data.user, token: data.token, isNewUser: data.isNewUser };
     } catch (err) {
-      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
-        const mockUser = {
-          id: "google_student_verified",
-          name: "Verified Student (Google)",
-          email: "student.google@learnai.local",
-          department: department || "Computer Science",
-          role: "Student",
-          is_verified: true,
-          auth_provider: "google",
-          avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=google_student_demo"
-        };
-        const mockToken = "mock_jwt_google_" + Date.now();
-        storageService.setToken(mockToken);
-        storageService.initNewUser(mockUser);
-        return { status: "success", user: mockUser, token: mockToken, isNewUser: false, isDemoMode: true };
-      }
-      throw err;
+      handleNetworkError(err);
     }
   },
 
@@ -61,23 +153,9 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mobile: phoneNumber })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to dispatch mobile verification code.");
-      }
-      return data;
+      return await handleApiResponse(res);
     } catch (err) {
-      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
-        const demoOtp = "123456";
-        sessionStorage.setItem(`demo_otp_${phoneNumber}`, demoOtp);
-        return {
-          success: true,
-          isDemoMode: true,
-          demoOtp,
-          message: `Demo Mode (Backend offline): Verification code is ${demoOtp}`
-        };
-      }
-      throw err;
+      handleNetworkError(err);
     }
   },
 
@@ -93,37 +171,12 @@ export const api = {
           department
         })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Mobile verification failed. Invalid or expired OTP.");
-      }
-
+      const data = await handleApiResponse(res);
       storageService.setToken(data.token);
       storageService.initNewUser(data.user);
       return { status: "success", user: data.user, token: data.token, isNewUser: data.isNewUser };
     } catch (err) {
-      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
-        const storedOtp = sessionStorage.getItem(`demo_otp_${phoneNumber}`) || "123456";
-        if (otp !== storedOtp && otp !== "123456") {
-          throw new Error("Invalid verification code. Please enter 123456 (Demo Code).");
-        }
-        const mockUser = {
-          id: `mobile_${phoneNumber}`,
-          name: `Student (${phoneNumber.slice(-4)})`,
-          email: `${phoneNumber}@sms.learnai.local`,
-          phone: `+91 ${phoneNumber}`,
-          department: department || "Computer Science",
-          role: "Student",
-          is_verified: true,
-          auth_provider: "mobile",
-          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${phoneNumber}`
-        };
-        const mockToken = `mock_jwt_mobile_${phoneNumber}_` + Date.now();
-        storageService.setToken(mockToken);
-        storageService.initNewUser(mockUser);
-        return { status: "success", user: mockUser, token: mockToken, isNewUser: false, isDemoMode: true };
-      }
-      throw err;
+      handleNetworkError(err);
     }
   },
 
@@ -140,23 +193,9 @@ export const api = {
           department: userData.department
         })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Registration failed.");
-      }
-      return data;
+      return await handleApiResponse(res);
     } catch (err) {
-      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
-        sessionStorage.setItem(`pending_user_${userData.email}`, JSON.stringify(userData));
-        sessionStorage.setItem(`demo_email_otp_${userData.email}`, "123456");
-        return {
-          success: true,
-          isDemoMode: true,
-          demoOtp: "123456",
-          message: "Demo Mode (Backend offline): Verification code is 123456"
-        };
-      }
-      throw err;
+      handleNetworkError(err);
     }
   },
 
@@ -168,42 +207,12 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Email verification failed.");
-      }
-
+      const data = await handleApiResponse(res);
       storageService.setToken(data.token);
       storageService.initNewUser(data.user);
       return { status: "success", user: data.user, token: data.token };
     } catch (err) {
-      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
-        const storedOtp = sessionStorage.getItem(`demo_email_otp_${email}`) || "123456";
-        if (otp !== storedOtp && otp !== "123456") {
-          throw new Error("Invalid verification code. Please enter 123456.");
-        }
-        let savedData = {};
-        try {
-          savedData = JSON.parse(sessionStorage.getItem(`pending_user_${email}`) || "{}");
-        } catch {
-          savedData = {};
-        }
-        const mockUser = {
-          id: "email_student_" + Date.now(),
-          name: savedData.name || email.split("@")[0],
-          email,
-          department: savedData.department || "Computer Science",
-          role: "Student",
-          is_verified: true,
-          auth_provider: "email",
-          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${email}`
-        };
-        const mockToken = "mock_jwt_email_" + Date.now();
-        storageService.setToken(mockToken);
-        storageService.initNewUser(mockUser);
-        return { status: "success", user: mockUser, token: mockToken, isDemoMode: true };
-      }
-      throw err;
+      handleNetworkError(err);
     }
   },
 
@@ -218,35 +227,12 @@ export const api = {
           password: credentials.password
         })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        const err = new Error(data.error || "Authentication failed.");
-        err.emailNotVerified = Boolean(data.emailNotVerified);
-        err.email = data.email || credentials.email;
-        throw err;
-      }
-
+      const data = await handleApiResponse(res);
       storageService.setToken(data.token);
       storageService.initNewUser(data.user);
       return { status: "success", user: data.user, token: data.token };
     } catch (err) {
-      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
-        const mockUser = {
-          id: "student_demo_" + credentials.email.replace(/\W/g, ""),
-          name: credentials.email.split("@")[0].replace(/[._]/g, " "),
-          email: credentials.email,
-          department: "Computer Science",
-          role: "Student",
-          is_verified: true,
-          auth_provider: "email",
-          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${credentials.email}`
-        };
-        const mockToken = "mock_jwt_email_" + Date.now();
-        storageService.setToken(mockToken);
-        storageService.initNewUser(mockUser);
-        return { status: "success", user: mockUser, token: mockToken, isDemoMode: true };
-      }
-      throw err;
+      handleNetworkError(err);
     }
   },
 
@@ -258,16 +244,9 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to resend verification code.");
-      }
-      return data;
+      return await handleApiResponse(res);
     } catch (err) {
-      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
-        return { success: true, isDemoMode: true, message: "Demo Mode: Verification code is 123456" };
-      }
-      throw err;
+      handleNetworkError(err);
     }
   },
 
@@ -279,17 +258,9 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to send password reset code.");
-      }
-      return data;
+      return await handleApiResponse(res);
     } catch (err) {
-      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
-        sessionStorage.setItem(`reset_otp_${email}`, "123456");
-        return { success: true, isDemoMode: true, message: "Demo Mode: Reset code is 123456" };
-      }
-      throw err;
+      handleNetworkError(err);
     }
   },
 
@@ -300,23 +271,18 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp, newPassword })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Password reset failed.");
-      }
-      return data;
+      return await handleApiResponse(res);
     } catch (err) {
-      if (err.message?.includes("Failed to fetch") || !API_BASE_URL || API_BASE_URL.includes("localhost")) {
-        if (otp !== "123456") {
-          throw new Error("Invalid reset code. Use 123456 in Demo Mode.");
-        }
-        return { success: true, isDemoMode: true, message: "Password updated successfully." };
-      }
-      throw err;
+      handleNetworkError(err);
     }
   },
 
   async getProfile() {
+    const token = storageService.getToken();
+    if (!token) {
+      return null;
+    }
+
     try {
       const res = await fetch(`${API_BASE_URL}/auth/me`, {
         headers: getAuthHeaders()
@@ -327,16 +293,16 @@ export const api = {
           storageService.updateUser(data.user);
           return { status: "success", user: data.user };
         }
+      } else if (res.status === 401) {
+        storageService.removeToken();
+        return null;
       }
     } catch (err) {
       console.warn("Profile fetch notice:", err.message);
     }
 
-    let user = storageService.getUser();
-    if (!user) {
-      user = storageService.initNewUser();
-    }
-    return { status: "success", user };
+    const user = storageService.getUser();
+    return user ? { status: "success", user } : null;
   },
 
   async updateProfile(profileData) {
@@ -346,15 +312,13 @@ export const api = {
         headers: getAuthHeaders(),
         body: JSON.stringify(profileData)
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          storageService.updateUser(data.user);
-          return { status: "success", user: data.user };
-        }
+      const data = await handleApiResponse(res);
+      if (data.user) {
+        storageService.updateUser(data.user);
+        return { status: "success", user: data.user };
       }
     } catch (err) {
-      console.warn("Update profile API notice:", err.message);
+      handleNetworkError(err);
     }
     const user = storageService.updateUser(profileData);
     return { status: "success", user };
@@ -375,7 +339,7 @@ export const api = {
     ];
 
     for (const stage of stages) {
-      await sleep(250);
+      await sleep(150);
       onProgress(stage);
     }
 
@@ -384,180 +348,224 @@ export const api = {
     const langCode = metadata.targetLanguage || "en";
     const questionCount = parseInt(metadata.questionCount || 5, 10);
 
-    let backendBook = null;
-    let backendSummary = null;
-    let backendQuiz = null;
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("title", formattedTitle);
+    formData.append("subject", metadata.subject || formattedTitle);
 
-    // Call Backend Upload & Summarize APIs
+    const token = storageService.getToken();
+
+    // 1. Upload textbook to backend
+    let uploadData;
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("title", formattedTitle);
-      formData.append("subject", metadata.subject || formattedTitle);
-
-      const token = storageService.getToken();
       const uploadRes = await fetch(`${API_BASE_URL}/upload-book`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData
       });
-
-      if (uploadRes.ok) {
-        const uploadData = await uploadRes.json();
-        backendBook = uploadData.book;
-
-        // Call /summarize with target_language
-        const sumRes = await fetch(`${API_BASE_URL}/summarize`, {
-          method: "POST",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            book_id: uploadData.book_id,
-            target_language: langCode
-          })
-        });
-
-        if (sumRes.ok) {
-          const sumData = await sumRes.json();
-          backendSummary = sumData.summary;
-        }
-
-        // Call /generate-quiz
-        const quizRes = await fetch(`${API_BASE_URL}/generate-quiz`, {
-          method: "POST",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            book_id: uploadData.book_id,
-            num_questions: questionCount,
-            language: langCode
-          })
-        });
-
-        if (quizRes.ok) {
-          const quizData = await quizRes.json();
-          backendQuiz = quizData.quiz;
-        }
-      }
-    } catch (backendErr) {
-      console.warn("Backend processing pipeline notice:", backendErr.message);
+      uploadData = await handleApiResponse(uploadRes);
+    } catch (err) {
+      handleNetworkError(err);
     }
 
-    const newId = backendBook ? backendBook.id : "tb-" + Date.now();
+    if (!uploadData || !uploadData.book) {
+      throw new Error("Textbook upload failed: server did not return book information.");
+    }
 
-    const newBook = backendBook || {
-      id: newId,
-      title: formattedTitle,
-      author: metadata.author || "Uploaded Academic Textbook",
-      coverUrl: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&auto=format&fit=crop&q=80",
-      subject: metadata.subject || cleanTitle,
-      category: "Academic",
-      pages: 45,
-      chaptersCount: 4,
-      progress: 0,
-      status: "In Progress",
-      lastStudied: "Just now",
-      topics: [
-        { id: `top-${newId}-1`, name: "Core Architecture & Workflow", mastery: 0, status: "Needs Improvement" },
-        { id: `top-${newId}-2`, name: "Protocols & Performance Benchmarks", mastery: 0, status: "Weak" },
-      ],
-      chapters: [
-        { id: `ch-${newId}-1`, number: 1, title: "Overview and Fundamental Concepts", pages: 20 },
-        { id: `ch-${newId}-2`, number: 2, title: "Deep Dive: Core Methodology & Implementation", pages: 30 },
-      ]
-    };
+    const backendBook = uploadData.book;
+    const bookId = uploadData.book_id || backendBook.id;
 
-    storageService.addTextbook(newBook);
+    // 2. Call /summarize with target_language
+    let sumData;
+    try {
+      const sumRes = await fetch(`${API_BASE_URL}/summarize`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          book_id: bookId,
+          target_language: langCode
+        })
+      });
+      sumData = await handleApiResponse(sumRes);
+    } catch (err) {
+      handleNetworkError(err);
+    }
 
-    const langSummaryTemplate = MULTILINGUAL_SUMMARIES[langCode] || MULTILINGUAL_SUMMARIES.en;
+    if (!sumData || !sumData.summary) {
+      throw new Error("AI summarization failed: server did not return summary.");
+    }
 
-    const newSummary = backendSummary ? {
-      ...backendSummary,
-      textbookId: newId,
-      bookTitle: newBook.title,
-      topic: `${newBook.title} - Fundamentals`,
-      readTime: "5 min read",
-      translations: MULTILINGUAL_SUMMARIES
-    } : {
-      id: "sum-" + Date.now(),
-      textbookId: newId,
-      bookTitle: newBook.title,
-      chapterId: `ch-${newId}-1`,
-      chapterTitle: `Chapter 1: ${langSummaryTemplate.title}`,
-      topic: `${newBook.title} - Fundamentals`,
-      language: langCode,
-      difficulty: metadata.difficulty || "Intermediate",
-      length: metadata.summaryLength || "Detailed",
-      createdDate: new Date().toISOString().split("T")[0],
-      readTime: "5 min read",
-      summaryText: langSummaryTemplate.summary,
-      simpleExplanation: langSummaryTemplate.simpleExplanation,
-      keyConcepts: langSummaryTemplate.keyConcepts,
-      keyPoints: langSummaryTemplate.keyPoints,
-      definitions: langSummaryTemplate.definitions,
-      formulas: [
-        {
-          name: "System Efficiency (η)",
-          formula: "η = (Useful Output / Total Energy Input) × 100%",
-          description: "Calculates performance ratio under standard operational load."
+    const backendSummary = sumData.summary;
+
+    // 3. Call /generate-quiz
+    let backendQuiz = null;
+    try {
+      const quizRes = await fetch(`${API_BASE_URL}/generate-quiz`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          book_id: bookId,
+          num_questions: questionCount,
+          language: langCode
+        })
+      });
+      if (quizRes.ok) {
+        const quizData = await quizRes.json();
+        backendQuiz = quizData.quiz;
+        if (backendQuiz) {
+          storageService.addQuiz(backendQuiz);
         }
-      ],
-      examples: [
-        {
-          title: "System Pipeline Execution",
-          code: `def execute_pipeline(stream):\n    validated = validate_input(stream)\n    return transform_and_emit(validated)`
-        }
-      ],
-      quickRevision: langSummaryTemplate.quickRevision,
-      translations: MULTILINGUAL_SUMMARIES
+      }
+    } catch (quizErr) {
+      console.warn("Quiz generation notice:", quizErr.message);
+    }
+
+    // Save genuine backend artifacts to storageService ONLY on success:
+    storageService.addTextbook(backendBook);
+    storageService.addSummary(backendSummary);
+
+    return {
+      status: "success",
+      textbook: backendBook,
+      summary: backendSummary,
+      quiz: backendQuiz
     };
+  },
 
-    storageService.addSummary(newSummary);
-
-    const newQuiz = backendQuiz || await this.generateQuiz({
-      textbookId: newId,
-      summaryId: newSummary.id,
-      topic: newSummary.topic,
-      subject: newBook.subject,
-      difficulty: metadata.difficulty || "Intermediate",
-      questionCount: questionCount,
-      language: langCode
-    });
-
-    return { status: "success", textbook: newBook, summary: newSummary, quiz: newQuiz };
+  // AI Summarization
+  async summarize({ bookId, targetLanguage = "en" }) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/summarize`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          book_id: bookId,
+          target_language: targetLanguage
+        })
+      });
+      const data = await handleApiResponse(res);
+      if (!data || !data.summary) {
+        throw new Error("Summarization failed: server did not return summary.");
+      }
+      storageService.addSummary(data.summary);
+      return data.summary;
+    } catch (err) {
+      handleNetworkError(err);
+    }
   },
 
   // Dynamic Quiz Generator (Supports 5, 10, 15, 20 questions)
-  async generateQuiz({ textbookId, summaryId, topic, subject, difficulty = "Intermediate", questionCount = 5, language = "en" }) {
+  async generateQuiz({ textbookId, bookId, book_id, summaryId, topic, subject, difficulty = "Intermediate", questionCount = 5, language = "en" }) {
     try {
+      const targetBookId = textbookId || bookId || book_id;
       const res = await fetch(`${API_BASE_URL}/generate-quiz`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          book_id: textbookId,
+          book_id: targetBookId,
           num_questions: questionCount,
           difficulty,
           language
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.quiz) {
-          storageService.addQuiz(data.quiz);
-          return data.quiz;
-        }
+      const data = await handleApiResponse(res);
+      if (data.quiz) {
+        storageService.addQuiz(data.quiz);
+        return data.quiz;
       }
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || "AI quiz generation is currently unavailable. Please try again later.");
+      throw new Error("Server did not return a valid quiz.");
     } catch (err) {
-      console.warn("Backend generateQuiz notice:", err.message);
-      throw err;
+      handleNetworkError(err);
     }
   },
 
+  async getQuizzes() {
+    try {
+      const res = await fetch(`${API_BASE_URL}/quizzes`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.quizzes)) {
+          return data.quizzes;
+        }
+      } else if (res.status === 401) {
+        storageService.removeToken();
+        throw new Error("Your session has expired. Please sign in again.");
+      }
+    } catch (err) {
+      if (err.status === 401) throw err;
+      console.warn("Backend getQuizzes notice:", err.message);
+    }
+    return storageService.getQuizzes();
+  },
+
+  async getQuizById(id) {
+    if (!id) return null;
+    try {
+      const res = await fetch(`${API_BASE_URL}/quizzes/${id}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.quiz) {
+          return data.quiz;
+        }
+      } else if (res.status === 401) {
+        storageService.removeToken();
+        throw new Error("Your session has expired. Please sign in again.");
+      } else if (res.status === 404) {
+        return null;
+      }
+    } catch (err) {
+      if (err.status === 401) throw err;
+      console.warn("Backend getQuizById notice:", err.message);
+    }
+    return storageService.getQuizzes().find((q) => q.id === id) || null;
+  },
+
   async getSummaries() {
+    try {
+      const res = await fetch(`${API_BASE_URL}/summaries`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.summaries)) {
+          return data.summaries;
+        }
+      } else if (res.status === 401) {
+        storageService.removeToken();
+        throw new Error("Your session has expired. Please sign in again.");
+      }
+    } catch (err) {
+      if (err.status === 401) throw err;
+      console.warn("Backend getSummaries notice:", err.message);
+    }
     return storageService.getSummaries();
   },
 
   async getSummaryById(id) {
+    if (!id) return null;
+    try {
+      const res = await fetch(`${API_BASE_URL}/summaries/${id}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.summary) {
+          return data.summary;
+        }
+      } else if (res.status === 401) {
+        storageService.removeToken();
+        throw new Error("Your session has expired. Please sign in again.");
+      } else if (res.status === 404) {
+        return null;
+      }
+    } catch (err) {
+      if (err.status === 401) throw err;
+      console.warn("Backend getSummaryById notice:", err.message);
+    }
     return storageService.getSummaryById(id);
   },
 
@@ -568,24 +576,10 @@ export const api = {
         headers: getAuthHeaders(),
         body: JSON.stringify({ target_language: targetLang })
       });
-      if (res.ok) {
-        const data = await res.json();
-        return data;
-      }
+      return await handleApiResponse(res);
     } catch (err) {
-      console.warn("Translate summary API notice:", err.message);
+      handleNetworkError(err);
     }
-
-    const translation = MULTILINGUAL_SUMMARIES[targetLang] || MULTILINGUAL_SUMMARIES.en;
-    return {
-      status: "success",
-      language: targetLang,
-      translation: {
-        summaryText: translation.summary,
-        simpleExplanation: translation.simpleExplanation,
-        keyPoints: translation.keyPoints
-      }
-    };
   },
 
   async textToSpeech(text, language = "en") {
@@ -595,13 +589,10 @@ export const api = {
         headers: getAuthHeaders(),
         body: JSON.stringify({ text, language })
       });
-      if (res.ok) {
-        return await res.json();
-      }
+      return await handleApiResponse(res);
     } catch (err) {
-      console.warn("TTS API notice:", err.message);
+      handleNetworkError(err);
     }
-    return { status: "fallback" };
   },
 
   // Real AI Academic Doubt Solver
@@ -616,14 +607,9 @@ export const api = {
           language
         })
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "AI tutor is currently unavailable. Please try again later.");
-      }
-      return data;
+      return await handleApiResponse(res);
     } catch (err) {
-      console.warn("Backend askDoubt error:", err.message);
-      throw err;
+      handleNetworkError(err);
     }
   },
 
@@ -637,73 +623,22 @@ export const api = {
           answers: submission.selectedAnswers
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        // Also save to local storage for instant offline UI responsiveness
-        storageService.saveQuizAttempt({
-          id: "attempt-" + Date.now(),
-          quizId: submission.quizId,
-          score: data.score,
-          totalQuestions: data.totalQuestions,
-          percentage: data.percentage,
-          performanceLevel: data.performanceLevel,
-          answers: data.reviewedAnswers || data.answers,
-          recommendedTopic: data.recommendedTopic,
-          recommendationDifficulty: data.recommendationDifficulty
-        });
-        return data;
-      }
+      const data = await handleApiResponse(res);
+      storageService.saveQuizAttempt({
+        id: "attempt-" + Date.now(),
+        quizId: submission.quizId,
+        score: data.score,
+        totalQuestions: data.totalQuestions,
+        percentage: data.percentage,
+        performanceLevel: data.performanceLevel,
+        answers: data.reviewedAnswers || data.answers,
+        recommendedTopic: data.recommendedTopic,
+        recommendationDifficulty: data.recommendationDifficulty
+      });
+      return data;
     } catch (err) {
-      console.warn("Submit quiz backend notice:", err.message);
+      handleNetworkError(err);
     }
-
-    const quiz = storageService.getQuizById(submission.quizId);
-    if (!quiz) throw new Error("Quiz not found");
-
-    let correctCount = 0;
-    const reviewedAnswers = quiz.questions.map((q) => {
-      const userSelected = submission.selectedAnswers[q.id];
-      const isCorrect = userSelected === q.correctAnswer;
-      if (isCorrect) correctCount += 1;
-
-      return {
-        questionId: q.id,
-        question: q.question,
-        userAnswerIndex: userSelected,
-        userOption: q.options[userSelected] || "No answer chosen",
-        correctAnswerIndex: q.correctAnswer,
-        correctOption: q.options[q.correctAnswer],
-        isCorrect,
-        explanation: q.explanation,
-        topic: q.topic
-      };
-    });
-
-    const percentage = Math.round((correctCount / quiz.questions.length) * 100);
-    let performanceLevel = "Weak";
-    if (percentage >= 80) performanceLevel = "Strong";
-    else if (percentage >= 65) performanceLevel = "Good";
-    else if (percentage >= 50) performanceLevel = "Needs Improvement";
-
-    const result = {
-      id: "attempt-" + Date.now(),
-      quizId: quiz.id,
-      quizTitle: quiz.title,
-      topic: quiz.topic,
-      subject: quiz.subject,
-      score: correctCount,
-      totalQuestions: quiz.questions.length,
-      percentage,
-      performanceLevel,
-      timeSpentSeconds: submission.timeSpentSeconds || 180,
-      submittedAt: new Date().toISOString(),
-      answers: reviewedAnswers,
-      recommendedTopic: percentage < 65 ? quiz.topic : "Next Advanced Chapter",
-      recommendationDifficulty: percentage < 50 ? "Beginner" : percentage < 75 ? "Intermediate" : "Advanced"
-    };
-
-    storageService.saveQuizAttempt(result);
-    return result;
   },
 
   async getRecommendations() {
@@ -718,8 +653,12 @@ export const api = {
           if (data.recommendations) {
             return data.recommendations;
           }
+        } else if (res.status === 401) {
+          storageService.removeToken();
+          throw new Error("Your session has expired. Please sign in again.");
         }
       } catch (err) {
+        if (err.status === 401) throw err;
         console.warn("Recommendations API notice:", err.message);
       }
     }
@@ -753,6 +692,8 @@ export const api = {
             activities: actData.activities || [],
             quizHistory: storageService.getQuizAttempts()
           };
+        } else if (progRes.status === 401) {
+          storageService.removeToken();
         }
       } catch (err) {
         console.warn("Analytics API notice:", err.message);

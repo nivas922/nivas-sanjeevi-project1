@@ -56,15 +56,7 @@ export class DocumentProcessorService {
    */
   static detectHierarchy(pages) {
     if (!Array.isArray(pages) || pages.length === 0) {
-      return [
-        {
-          chapterTitle: "Chapter 1: Full Document",
-          sectionTitle: "Section 1: General Content",
-          pageStart: 1,
-          pageEnd: 1,
-          text: ""
-        }
-      ];
+      return [];
     }
 
     const sections = [];
@@ -81,7 +73,7 @@ export class DocumentProcessorService {
 
     for (const page of pages) {
       const pageNum = page.pageNumber;
-      const lines = page.text.split("\n");
+      const lines = (page.text || "").split("\n");
 
       for (const rawLine of lines) {
         const line = rawLine.trim();
@@ -145,15 +137,19 @@ export class DocumentProcessorService {
       });
     }
 
-    // Fallback: If no text was captured, fallback cleanly
+    // Fallback: If no text was captured in heading loops, combine raw page text
     if (sections.length === 0) {
-      const combinedText = pages.map((p) => p.text).join("\n\n");
+      const validPages = pages.filter((p) => p.text && p.text.trim().length > 0);
+      if (validPages.length === 0) {
+        return [];
+      }
+      const combinedText = validPages.map((p) => p.text).join("\n\n");
       return [
         {
           chapterTitle: "Chapter 1: Full Document",
           sectionTitle: "Section 1: General Content",
-          pageStart: pages[0]?.pageNumber || 1,
-          pageEnd: pages[pages.length - 1]?.pageNumber || 1,
+          pageStart: validPages[0]?.pageNumber || 1,
+          pageEnd: validPages[validPages.length - 1]?.pageNumber || 1,
           text: combinedText
         }
       ];
@@ -174,14 +170,9 @@ export class DocumentProcessorService {
     overlap = CHUNK_CONFIG.DEFAULT_CHUNK_OVERLAP
   }) {
     if (!filePath || !fs.existsSync(filePath)) {
-      return {
-        success: false,
-        chaptersCount: 0,
-        sectionsCount: 0,
-        totalChunks: 0,
-        fullText: "",
-        chunks: []
-      };
+      const err = new Error("Document file does not exist on disk.");
+      err.statusCode = 404;
+      throw err;
     }
 
     let extractionResult = { pages: [], fullText: "", totalPages: 0 };
@@ -192,28 +183,46 @@ export class DocumentProcessorService {
       extractionResult = await PdfExtractorService.extractPagesFromFile(filePath);
     } else if (ext === ".txt") {
       const txtContent = PdfExtractorService.normalizeText(fs.readFileSync(filePath, "utf-8"));
+      if (!txtContent || txtContent.trim().length === 0) {
+        const err = new Error("This document does not contain extractable text. Please upload a text-based document.");
+        err.statusCode = 400;
+        throw err;
+      }
       extractionResult = {
         pages: [{ pageNumber: 1, text: txtContent }],
         fullText: txtContent,
         totalPages: 1
       };
     } else {
-      // Non-selectable or fallback doc types
-      const placeholderText = PdfExtractorService.normalizeText(
-        `Academic textbook content extracted from ${path.basename(filePath)}. Topics: Core Architecture, System Fundamentals, Protocols, and Algorithms.`
-      );
-      extractionResult = {
-        pages: [{ pageNumber: 1, text: placeholderText }],
-        fullText: placeholderText,
-        totalPages: 1
-      };
+      const imageExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+      if (imageExtensions.includes(ext) || (mimeType && mimeType.startsWith("image/"))) {
+        const err = new Error("This file does not contain extractable text. Please upload a text-based PDF.");
+        err.statusCode = 400;
+        throw err;
+      }
+      const err = new Error("This document format does not contain extractable text. Please upload a text-based PDF.");
+      err.statusCode = 400;
+      throw err;
     }
 
     const pages = extractionResult.pages;
     const fullText = extractionResult.fullText;
 
+    if (!fullText || fullText.trim().length === 0) {
+      const err = new Error("This PDF does not contain extractable text. Please upload a text-based PDF.");
+      err.statusCode = 400;
+      throw err;
+    }
+
     // Detect chapters and sections
-    const sections = this.detectHierarchy(pages);
+    const rawSections = this.detectHierarchy(pages);
+    const sections = rawSections.filter((s) => s.text && s.text.trim().length > 0);
+
+    if (sections.length === 0) {
+      const err = new Error("This PDF does not contain extractable text. Please upload a text-based PDF.");
+      err.statusCode = 400;
+      throw err;
+    }
 
     // Count unique chapters and total sections
     const chapterSet = new Set(sections.map((s) => s.chapterTitle));
@@ -227,6 +236,12 @@ export class DocumentProcessorService {
       chunkSize,
       overlap
     });
+
+    if (structuredChunks.length === 0) {
+      const err = new Error("This PDF does not contain extractable text. Please upload a text-based PDF.");
+      err.statusCode = 400;
+      throw err;
+    }
 
     // Store in SQLite database if bookId is provided
     let savedChunks = structuredChunks;

@@ -5,6 +5,7 @@ import { ActivityLog } from "../models/ActivityLog.js";
 import { AiService } from "../services/aiService.js";
 import { TtsService } from "../services/ttsService.js";
 import { TranslationService } from "../services/translationService.js";
+import { isLanguageSupported, SUPPORTED_LANGUAGES } from "../config/languageConfig.js";
 
 export class SummaryController {
   // POST /summarize
@@ -18,11 +19,21 @@ export class SummaryController {
       }
 
       // Read preferred_language from user profile if target_language is not explicitly given
-      const targetLanguage = req.body.target_language || req.body.language || req.user.preferred_language || "en";
+      const rawTargetLang = req.body.target_language || req.body.language;
+      if (rawTargetLang && !isLanguageSupported(rawTargetLang)) {
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported target language: '${rawTargetLang}'. Supported languages: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}.`
+        });
+      }
+      const targetLanguage = rawTargetLang || req.user?.preferred_language || "en";
 
       const book = await Book.findById(targetBookId);
       if (!book) {
         return res.status(404).json({ success: false, error: "Book not found with provided ID." });
+      }
+      if (book.user_id && req.userId && book.user_id !== req.userId) {
+        return res.status(403).json({ success: false, error: "You do not have authorization to summarize this textbook." });
       }
 
       // Generate full-document AI summary via Phase 3 Gemini Pipeline
@@ -130,7 +141,14 @@ export class SummaryController {
   static async translateExistingSummary(req, res, next) {
     try {
       const summaryId = req.params.id;
-      const targetLang = req.body.target_language || req.body.language || req.user.preferred_language || "ta";
+      const rawTargetLang = req.body.target_language || req.body.language;
+      if (rawTargetLang && !isLanguageSupported(rawTargetLang)) {
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported target language: '${rawTargetLang}'. Supported languages: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}.`
+        });
+      }
+      const targetLang = rawTargetLang || req.user?.preferred_language || "ta";
 
       const summary = await Summary.findById(summaryId);
       if (!summary) {

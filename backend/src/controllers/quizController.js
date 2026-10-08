@@ -10,27 +10,33 @@ export class QuizController {
   static async generateQuiz(req, res, next) {
     try {
       const { book_id, bookId, num_questions, questionCount, difficulty, language, target_language, topic, isAdaptive } = req.body;
-      let targetBookId = book_id || bookId;
-      const totalQuestions = parseInt(num_questions || questionCount || 5, 10);
+      const targetBookId = book_id || bookId;
+      const rawCount = num_questions ?? questionCount;
+      const totalQuestions = rawCount !== undefined ? parseInt(rawCount, 10) : 5;
       const targetLang = language || target_language || req.user?.preferred_language || "en";
-
-      if (!targetBookId && req.userId) {
-        const userBook = await Book.findLatestByUserId(req.userId);
-        if (userBook) {
-          targetBookId = userBook.id;
-        } else {
-          const globalBook = await Book.findLatest();
-          if (globalBook) {
-            targetBookId = globalBook.id;
-          }
-        }
-      }
 
       if (!targetBookId) {
         return res.status(400).json({
           success: false,
-          error: "No textbook specified or found. Please upload a textbook first to generate an AI quiz."
+          error: "book_id is required for AI quiz generation."
         });
+      }
+
+      if (isNaN(totalQuestions) || totalQuestions < 1 || totalQuestions > 30) {
+        return res.status(400).json({
+          success: false,
+          error: "Question count must be an integer between 1 and 30."
+        });
+      }
+
+      if (difficulty) {
+        const allowedDiffs = ["easy", "medium", "hard", "beginner", "intermediate", "advanced"];
+        if (typeof difficulty !== "string" || !allowedDiffs.includes(difficulty.trim().toLowerCase())) {
+          return res.status(400).json({
+            success: false,
+            error: "Invalid difficulty level. Supported values: easy, medium, hard (or beginner, intermediate, advanced)."
+          });
+        }
       }
 
       const book = await Book.findById(targetBookId);
@@ -38,6 +44,14 @@ export class QuizController {
         return res.status(404).json({
           success: false,
           error: `Textbook with ID '${targetBookId}' not found.`
+        });
+      }
+
+      // Check textbook ownership (prevent cross-user IDOR)
+      if (book.user_id && req.userId && book.user_id !== req.userId) {
+        return res.status(403).json({
+          success: false,
+          error: "Access denied: You do not have permission to generate a quiz for this textbook."
         });
       }
 
@@ -91,10 +105,14 @@ export class QuizController {
     try {
       const { quiz_id, quizId, answers, selectedAnswers } = req.body;
       const targetQuizId = quiz_id || quizId;
-      const userAnswers = answers || selectedAnswers || {};
+      const userAnswers = answers ?? selectedAnswers;
 
       if (!targetQuizId) {
         return res.status(400).json({ success: false, error: "quiz_id is required." });
+      }
+
+      if (userAnswers === undefined || userAnswers === null || typeof userAnswers !== "object") {
+        return res.status(400).json({ success: false, error: "answers must be an object or array." });
       }
 
       const quiz = await Quiz.findById(targetQuizId);
@@ -110,19 +128,44 @@ export class QuizController {
       let correctCount = 0;
 
       const reviewedAnswers = questions.map((q) => {
-        const selected = Array.isArray(userAnswers)
-          ? userAnswers.find((a) => a.questionId === q.id)?.selectedAnswer
-          : userAnswers[q.id];
+        let rawSelected;
+        if (Array.isArray(userAnswers)) {
+          const match = userAnswers.find((a) => a && (a.questionId === q.id || a.id === q.id));
+          rawSelected = match ? (match.selectedAnswer ?? match.answer) : undefined;
+        } else {
+          rawSelected = userAnswers[q.id];
+        }
 
-        const isCorrect = Number(selected) === Number(q.correctAnswer);
+        // Validate selected answer index strictly to prevent Number("") === 0 or Number(null) === 0 bugs
+        let selectedIdx = null;
+        let isCorrect = false;
+
+        if (
+          rawSelected !== undefined &&
+          rawSelected !== null &&
+          rawSelected !== "" &&
+          rawSelected !== false
+        ) {
+          const parsed = Number(rawSelected);
+          if (
+            Number.isInteger(parsed) &&
+            parsed >= 0 &&
+            Array.isArray(q.options) &&
+            parsed < q.options.length
+          ) {
+            selectedIdx = parsed;
+            isCorrect = selectedIdx === Number(q.correctAnswer);
+          }
+        }
+
         if (isCorrect) correctCount += 1;
 
         return {
           questionId: q.id,
           question: q.question,
-          userAnswerIndex: selected !== undefined ? Number(selected) : null,
-          userOption: selected !== undefined ? q.options?.[selected] : "No answer chosen",
-          correctAnswerIndex: q.correctAnswer,
+          userAnswerIndex: selectedIdx,
+          userOption: selectedIdx !== null && q.options?.[selectedIdx] ? q.options[selectedIdx] : "No answer chosen",
+          correctAnswerIndex: Number(q.correctAnswer),
           correctOption: q.options?.[q.correctAnswer],
           isCorrect,
           explanation: q.explanation,

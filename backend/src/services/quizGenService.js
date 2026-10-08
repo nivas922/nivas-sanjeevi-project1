@@ -14,7 +14,7 @@ export class QuizGenService {
     const apiKey = env.GEMINI_API_KEY;
     if (!apiKey && env.NODE_ENV !== "test") {
       const err = new Error("AI quiz generation is currently unavailable. Please configure GEMINI_API_KEY in backend environment variables.");
-      err.statusCode = 503;
+      err.statusCode = 530;
       throw err;
     }
 
@@ -156,15 +156,32 @@ STRICT QUESTION GENERATION RULES:
         continue;
       }
 
-      // 2. Options validation (exactly 4 non-empty options)
+      // 2. Options validation (must be array of exactly 4 non-empty distinct options)
       if (!Array.isArray(q.options) || q.options.length !== 4) {
         continue;
       }
       const hasEmptyOption = q.options.some((opt) => !opt || typeof opt !== "string" || opt.trim().length === 0);
       if (hasEmptyOption) continue;
 
-      // 3. Correct answer index validation (0..3 integer)
-      const correctIdx = Number(q.correctAnswer);
+      const uniqueOpts = new Set(q.options.map((o) => o.trim().toLowerCase()));
+      if (uniqueOpts.size !== 4) {
+        // Discard questions containing duplicate options
+        continue;
+      }
+
+      // 3. Correct answer index validation (0..3 integer, with safe letter "A".."D" repair)
+      let correctIdx = q.correctAnswer;
+      if (typeof correctIdx === "string") {
+        const trimmed = correctIdx.trim().toUpperCase();
+        if (["A", "B", "C", "D"].includes(trimmed)) {
+          correctIdx = { A: 0, B: 1, C: 2, D: 3 }[trimmed];
+        } else {
+          correctIdx = Number(trimmed);
+        }
+      } else {
+        correctIdx = Number(correctIdx);
+      }
+
       if (isNaN(correctIdx) || !Number.isInteger(correctIdx) || correctIdx < 0 || correctIdx > 3) {
         continue;
       }
@@ -175,7 +192,10 @@ STRICT QUESTION GENERATION RULES:
       }
 
       let diff = (q.difficulty || "medium").toString().toLowerCase();
-      if (!["easy", "medium", "hard"].includes(diff)) {
+      if (diff === "beginner") diff = "easy";
+      else if (diff === "intermediate") diff = "medium";
+      else if (diff === "advanced") diff = "hard";
+      else if (!["easy", "medium", "hard"].includes(diff)) {
         diff = "medium";
       }
 
@@ -189,7 +209,8 @@ STRICT QUESTION GENERATION RULES:
         chapter: (q.chapter || "Chapter 1").toString().trim(),
         section: (q.section || "1.1").toString().trim(),
         sourcePages: (q.sourcePages || "1-5").toString().trim(),
-        bookId: book.id
+        bookId: book.id,
+        book_id: book.id
       });
     }
 

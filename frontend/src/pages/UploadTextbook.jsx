@@ -154,8 +154,9 @@ export const UploadTextbook = () => {
         navigate(`/summaries/${res.summary.id}`);
       }, 900);
     } catch (err) {
-      showError("Unable to generate summary. Please try again.");
+      showError(err.message || "Unable to generate summary. Please try again.");
       setIsProcessing(false);
+      setProgressPercent(0);
     }
   };
 

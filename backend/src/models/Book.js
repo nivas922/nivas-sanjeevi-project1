@@ -48,4 +48,8 @@ export class Book {
     );
     return this.findById(id);
   }
+
+  static async deleteById(id) {
+    await dbRun("DELETE FROM books WHERE id = ?", [id]);
+  }
 }

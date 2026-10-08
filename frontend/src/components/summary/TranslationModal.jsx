@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Modal } from "../common/Modal";
-import { Globe, Volume2, CheckCircle2, ArrowRight, Loader2 } from "lucide-react";
+import { Globe, Volume2, CheckCircle2, ArrowRight, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "../common/Button";
 import { TextToSpeech } from "../tts/TextToSpeech";
 import { SUPPORTED_LANGUAGES } from "../../data/demoData";
@@ -13,6 +13,7 @@ export const TranslationModal = ({
 }) => {
   const [selectedLang, setSelectedLang] = useState("ta");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [translatedData, setTranslatedData] = useState(null);
 
   useEffect(() => {
@@ -24,9 +25,13 @@ export const TranslationModal = ({
   const loadTranslation = async (langCode) => {
     if (!summary) return;
     setLoading(true);
+    setError(null);
     try {
       const res = await api.translateSummary(summary.id, langCode);
       setTranslatedData(res.translation);
+    } catch (err) {
+      setError(err.message || "Failed to translate summary. Please try again.");
+      setTranslatedData(null);
     } finally {
       setLoading(false);
     }
@@ -74,7 +79,20 @@ export const TranslationModal = ({
         </div>
 
         {/* Translation Content */}
-        {loading ? (
+        {error ? (
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm font-medium flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+              <span>{error}</span>
+            </div>
+            <button
+              onClick={() => loadTranslation(selectedLang)}
+              className="px-3 py-1 rounded-lg bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        ) : loading ? (
           <div className="py-12 flex flex-col items-center justify-center text-center">
             <Loader2 className="w-8 h-8 text-brand-600 animate-spin mb-3" />
             <p className="text-sm font-bold text-slate-800">Translating to {currentLangObj.name}...</p>

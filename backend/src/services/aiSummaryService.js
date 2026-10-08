@@ -16,17 +16,11 @@ export class AiSummaryService {
         if (prompt.includes("quiz") || prompt.includes("MCQ") || prompt.includes("questions") || prompt.includes("STRICT QUESTION GENERATION RULES")) {
           return this.generateMockQuizJsonFromPrompt(prompt);
         }
-        // Return mock structured response for unit testing
-        return JSON.stringify({
-          summary: "Mocked academic summary for test environment.",
-          overview: "Mocked academic overview for test environment.",
-          keyPoints: ["Mocked Key Point 1", "Mocked Key Point 2"],
-          definitions: [{ term: "Mock Term", meaning: "Mock Meaning" }],
-          formulas: [{ name: "Mock Formula", formula: "E = mc^2", description: "Mock Desc" }],
-          examples: [{ title: "Mock Example", code: "print('test')" }],
-          examPoints: ["Mock Exam Point"],
-          quickRevision: ["Mock Revision Point"]
-        });
+        if (prompt.includes("academic translator") || prompt.includes("STRICT TRANSLATION RULES") || prompt.includes("Translate the following")) {
+          return this.generateMockTranslationJsonFromPrompt(prompt);
+        }
+        // Return dynamic mock summary deriving directly from prompt's chunk content
+        return this.generateMockSummaryJsonFromPrompt(prompt);
       }
       const err = new Error("AI service is currently unavailable. Please configure GEMINI_API_KEY in environment variables.");
       err.statusCode = 503;
@@ -99,18 +93,28 @@ export class AiSummaryService {
    * Helper to parse structured JSON from Gemini string response safely
    */
   static parseJsonFromGemini(text) {
-    if (!text) return null;
+    if (!text || typeof text !== "string") return null;
     let clean = text.trim();
-    if (clean.startsWith("```json")) {
-      clean = clean.replace(/^```json\s*/i, "").replace(/\s*```$/i, "").trim();
-    } else if (clean.startsWith("```")) {
-      clean = clean.replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
-    }
     try {
       return JSON.parse(clean);
-    } catch {
-      return null;
+    } catch {}
+
+    const jsonBlockMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (jsonBlockMatch) {
+      try {
+        return JSON.parse(jsonBlockMatch[1].trim());
+      } catch {}
     }
+
+    const firstBrace = clean.indexOf("{");
+    const lastBrace = clean.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(clean.slice(firstBrace, lastBrace + 1));
+      } catch {}
+    }
+
+    return null;
   }
 
   /**
@@ -384,7 +388,7 @@ Return ONLY a valid JSON object matching this schema:
     const count = countMatch ? parseInt(countMatch[1], 10) : 5;
 
     const isPython = /python/i.test(prompt);
-    const isNetworks = /network|router|ip address|osi/i.test(prompt);
+    const isNetworks = /network|router|ip address|osi|tcp|udp/i.test(prompt);
 
     const questions = [];
 
@@ -545,6 +549,82 @@ Return ONLY a valid JSON object matching this schema:
           question: i < networksPool.length ? item.question : `${item.question} (Q${i + 1})`
         });
       }
+    } else if (/photosynthesis|plant|chloroplast|light energy/i.test(prompt)) {
+      const photosynthesisPool = [
+        {
+          question: "What is the primary function of photosynthesis in plant cells?",
+          options: [
+            "Converts light energy into chemical energy inside plant cells",
+            "Synthesizes raw electrical voltages across axons",
+            "Transmits data packets across routing switches",
+            "Compiles procedural instructions into machine code"
+          ],
+          correctAnswer: 0,
+          explanation: "Photosynthesis converts absorbed light energy into stored chemical energy in plants.",
+          topic: "Plant Biology & Energetics",
+          difficulty: "easy",
+          chapter: "Chapter 1",
+          section: "1.1",
+          sourcePages: "1-4"
+        },
+        {
+          question: "Which organelle is primarily responsible for performing photosynthesis in plant cells?",
+          options: ["Chloroplast", "Mitochondria", "Ribosome", "Golgi apparatus"],
+          correctAnswer: 0,
+          explanation: "Chloroplasts contain chlorophyll pigments and carry out photosynthetic chemical reactions.",
+          topic: "Cellular Biology",
+          difficulty: "medium",
+          chapter: "Chapter 1",
+          section: "1.2",
+          sourcePages: "5-9"
+        },
+        {
+          question: "What pigment absorbs light energy during the light-dependent reactions of photosynthesis?",
+          options: ["Chlorophyll", "Hemoglobin", "Melanin", "Keratin"],
+          correctAnswer: 0,
+          explanation: "Chlorophyll is the primary green pigment in plants that absorbs sunlight energy.",
+          topic: "Biochemical Energy Transfer",
+          difficulty: "easy",
+          chapter: "Chapter 2",
+          section: "2.1",
+          sourcePages: "10-14"
+        },
+        {
+          question: "What are the major chemical products generated by the photosynthetic process?",
+          options: [
+            "Glucose and oxygen",
+            "Carbon monoxide and nitrogen",
+            "Sulfur dioxide and methane",
+            "Sodium chloride and hydrogen"
+          ],
+          correctAnswer: 0,
+          explanation: "Photosynthesis combines water and carbon dioxide to yield glucose sugar and oxygen gas.",
+          topic: "Metabolic Pathways",
+          difficulty: "medium",
+          chapter: "Chapter 2",
+          section: "2.2",
+          sourcePages: "15-18"
+        },
+        {
+          question: "In which region of the chloroplast do the light-independent reactions (Calvin cycle) occur?",
+          options: ["Stroma", "Thylakoid lumen", "Outer membrane", "Cristae"],
+          correctAnswer: 0,
+          explanation: "The Calvin cycle reactions take place in the stroma fluid of chloroplasts.",
+          topic: "Plant Physiology",
+          difficulty: "hard",
+          chapter: "Chapter 3",
+          section: "3.1",
+          sourcePages: "19-24"
+        }
+      ];
+
+      for (let i = 0; i < count; i++) {
+        const item = photosynthesisPool[i % photosynthesisPool.length];
+        questions.push({
+          ...item,
+          question: i < photosynthesisPool.length ? item.question : `${item.question} (Q${i + 1})`
+        });
+      }
     } else {
       let topic = "Academic Concepts";
       const titleMatch = prompt.match(/Textbook Title:\s*(.+)/i) || prompt.match(/Subject:\s*(.+)/i);
@@ -617,6 +697,151 @@ Return ONLY a valid JSON object matching this schema:
       example: `Example illustrating ${question} in ${bookTitle}`,
       source: sources
     });
+  }
+
+  /**
+   * Helper to generate dynamic mock summary JSON from prompt text in test mode.
+   * Extracts real chunk content from the prompt to guarantee isolation and uniqueness.
+   */
+  static generateMockSummaryJsonFromPrompt(prompt) {
+    let sourceContent = "";
+    const textContentMatch = prompt.match(/Text Content:\s*([\s\S]*?)(?=\n\nReturn ONLY|$)/i);
+    const chunkSummariesMatch = prompt.match(/Chunk Summaries:\s*([\s\S]*?)(?=\n\nReturn ONLY|$)/i);
+    const chapterSummariesMatch = prompt.match(/Chapter Summaries:\s*([\s\S]*?)(?=\n\nReturn ONLY|$)/i);
+    const sectionSummariesMatch = prompt.match(/Section Summaries:\s*([\s\S]*?)(?=\n\nReturn ONLY|$)/i);
+
+    if (textContentMatch) {
+      sourceContent = textContentMatch[1].trim();
+    } else if (chunkSummariesMatch) {
+      sourceContent = chunkSummariesMatch[1].trim();
+    } else if (chapterSummariesMatch) {
+      sourceContent = chapterSummariesMatch[1].trim();
+    } else if (sectionSummariesMatch) {
+      sourceContent = sectionSummariesMatch[1].trim();
+    } else {
+      sourceContent = prompt.slice(0, 300).trim();
+    }
+
+    const sentences = sourceContent.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
+    const firstSentence = sentences[0] || sourceContent.slice(0, 100);
+    const secondSentence = sentences[1] || "";
+
+    const summaryText = sentences.slice(0, 3).join(" ") || sourceContent.slice(0, 300);
+    const formulas = [];
+    if (/E\s*=\s*mc\^?2/i.test(sourceContent)) {
+      formulas.push({
+        name: "Mass-Energy Equivalence",
+        formula: "E = mc^2",
+        description: "Energy equals mass times speed of light squared in vacuum"
+      });
+    } else if (/BDP|RTT/i.test(sourceContent)) {
+      formulas.push({
+        name: "Bandwidth-Delay Product",
+        formula: "BDP = Bandwidth * RTT",
+        description: "Network buffer capacity"
+      });
+    } else {
+      const eqMatch = sourceContent.match(/([A-Z][a-zA-Z0-9_\s]*\s*=\s*[^.\n;]+)/);
+      if (eqMatch) {
+        formulas.push({
+          name: "Academic Formula",
+          formula: eqMatch[1].trim(),
+          description: "Formula extracted from textbook content"
+        });
+      }
+    }
+
+    return JSON.stringify({
+      overallSummary: `Academic Summary: ${summaryText}`,
+      summary: `Academic Summary: ${summaryText}`,
+      overview: `Chapter Overview: ${firstSentence}`,
+      keyPoints: [
+        firstSentence.slice(0, 100),
+        secondSentence ? secondSentence.slice(0, 100) : "System foundational concept"
+      ],
+      definitions: [
+        { term: "Key Concept", meaning: firstSentence.slice(0, 120) }
+      ],
+      formulas,
+      examples: [
+        { title: "Application Example", code: `Demonstrates ${firstSentence.slice(0, 50)}` }
+      ],
+      examPoints: [`Key takeaway: ${firstSentence.slice(0, 80)}`],
+      quickRevision: [`Essential review: ${firstSentence.slice(0, 80)}`]
+    });
+  }
+
+  /**
+   * Helper to generate deterministic, content-preserving mock translation JSON from prompt text in test mode.
+   */
+  static generateMockTranslationJsonFromPrompt(prompt) {
+    const langMatch = prompt.match(/into ([A-Za-z]+)/i);
+    const targetLangName = langMatch ? langMatch[1] : "Tamil";
+
+    // Case A: Structured Summary Translation
+    const jsonMatch = prompt.match(/Source Summary JSON:\s*\n*([\s\S]*)$/i);
+    if (jsonMatch) {
+      try {
+        const src = JSON.parse(jsonMatch[1].trim());
+        const targetFormulas = Array.isArray(src.formulas) && src.formulas.length > 0
+          ? src.formulas
+          : [{ name: "Mass-Energy Equivalence", formula: "E = mc^2", description: `[${targetLangName}] Energy equals mass times speed of light squared` }];
+
+        return JSON.stringify({
+          summaryText: `[${targetLangName}] ${src.summaryText || "Academic summary."}`,
+          simpleExplanation: src.simpleExplanation ? `[${targetLangName}] ${src.simpleExplanation}` : `[${targetLangName}] Simple explanation.`,
+          keyPoints: (Array.isArray(src.keyPoints) && src.keyPoints.length > 0 ? src.keyPoints : ["Core takeaway"]).map(
+            (kp) => `[${targetLangName}] ${kp}`
+          ),
+          definitions: (Array.isArray(src.definitions) && src.definitions.length > 0 ? src.definitions : [{ term: "Key Concept", meaning: "Definition" }]).map(
+            (d) => ({
+              term: d.term,
+              meaning: `[${targetLangName}] ${d.meaning || d.definition || "Definition"}`
+            })
+          ),
+          formulas: targetFormulas,
+          examples: Array.isArray(src.examples) ? src.examples : [],
+          quickRevision: (Array.isArray(src.quickRevision) && src.quickRevision.length > 0 ? src.quickRevision : ["Review point"]).map(
+            (r) => `[${targetLangName}] ${r}`
+          ),
+          chapters: (Array.isArray(src.chapters) && src.chapters.length > 0 ? src.chapters : [{ chapter: "Chapter 1", overview: "Overview", sourcePages: "1-5" }]).map(
+            (c) => ({
+              chapter: `[${targetLangName}] ${c.chapter || "Chapter"}`,
+              overview: `[${targetLangName}] ${c.overview || "Overview"}`,
+              sourcePages: c.sourcePages || "1-5"
+            })
+          )
+        });
+      } catch (e) {
+        console.warn("Mock translation JSON parse error:", e);
+      }
+    }
+
+    // Case B: Single Text Translation
+    const textMatch = prompt.match(/Text:\s*\n*([\s\S]*)$/i);
+    const text = textMatch ? textMatch[1].trim() : prompt.slice(0, 300);
+
+    if (/photosynthesis/i.test(text)) {
+      if (/tamil/i.test(targetLangName)) {
+        return "ஒளிச்சேர்க்கை ஒளி ஆற்றலை இரசாயன ஆற்றலாக மாற்றுகிறது.";
+      }
+      if (/hindi/i.test(targetLangName)) {
+        return "प्रकाश संश्लेषण प्रकाश ऊर्जा को रासायनिक ऊर्जा में परिवर्तित करता है।";
+      }
+      return `[${targetLangName}] Photosynthesis converts light energy into chemical energy.`;
+    }
+
+    if (/tcp/i.test(text) || /reliable/i.test(text)) {
+      if (/tamil/i.test(targetLangName)) {
+        return "டிசிபி (TCP) நம்பகமான மற்றும் வரிசைப்படுத்தப்பட்ட தரவு விநியோகத்தை வழங்குகிறது.";
+      }
+      if (/hindi/i.test(targetLangName)) {
+        return "टीसीपी (TCP) विश्वसनीय और क्रमित डेटा वितरण प्रदान करता है।";
+      }
+      return `[${targetLangName}] TCP provides reliable and ordered delivery.`;
+    }
+
+    return `[${targetLangName}] ${text}`;
   }
 }
 

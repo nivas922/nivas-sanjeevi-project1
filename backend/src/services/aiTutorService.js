@@ -11,13 +11,13 @@ export class AiTutorService {
     console.log(`[AI-Tutor-Service] Solving doubt for bookId '${bookId}' (User: ${userId}): "${question}"`);
 
     const apiKey = env.GEMINI_API_KEY;
-    if (!apiKey && env.NODE_ENV !== "test") {
+    if (!apiKey && (env.NODE_ENV !== "test" || process.env.NODE_ENV !== "test")) {
       const err = new Error("AI tutor is currently unavailable. Please configure GEMINI_API_KEY in backend environment variables.");
       err.statusCode = 503;
       throw err;
     }
 
-    if (!bookId) {
+    if (!bookId || typeof bookId !== "string" || bookId.trim().length === 0) {
       const err = new Error("bookId is required.");
       err.statusCode = 400;
       throw err;
@@ -31,7 +31,7 @@ export class AiTutorService {
       throw err;
     }
 
-    if (book.user_id && book.user_id !== userId) {
+    if (book.user_id && (!userId || book.user_id !== userId)) {
       const err = new Error("You do not have authorization to access this textbook.");
       err.statusCode = 403;
       throw err;
@@ -111,41 +111,49 @@ STRICT AI TUTOR RULES:
     const rawResponse = await AiSummaryService.callGeminiApiWithRetry(prompt);
     const parsedJSON = AiSummaryService.parseJsonFromGemini(rawResponse);
 
-    if (parsedJSON && parsedJSON.answer) {
-      const sources = Array.isArray(parsedJSON.source) && parsedJSON.source.length > 0
-        ? parsedJSON.source
-        : chunks.map((c) => ({
-            chapter: c.chapter || "Overview",
-            section: c.section || "General",
-            pageStart: c.pageStart || 1,
-            pageEnd: c.pageEnd || 1,
-            chunkId: c.id
-          }));
-
-      return {
-        success: true,
-        answer: parsedJSON.answer,
-        hasRelevantContent: true,
-        keyPoints: Array.isArray(parsedJSON.keyPoints) ? parsedJSON.keyPoints : [],
-        example: parsedJSON.example || null,
-        source: sources
-      };
+    if (!parsedJSON || !parsedJSON.answer || typeof parsedJSON.answer !== "string") {
+      const err = new Error("AI tutor returned an unparseable response format. Please try asking again.");
+      err.statusCode = 502;
+      throw err;
     }
 
-    // Fallback if structured parsing fails but text returned
-    return {
-      success: true,
-      answer: rawResponse.slice(0, 1000),
-      hasRelevantContent: true,
-      keyPoints: [],
-      example: null,
-      source: chunks.map((c) => ({
+    const chunkMap = new Map(chunks.map((c) => [c.id, c]));
+    let sources = [];
+    if (Array.isArray(parsedJSON.source) && parsedJSON.source.length > 0) {
+      sources = parsedJSON.source
+        .map((s) => {
+          const matchingChunk = chunkMap.get(s.chunkId);
+          if (matchingChunk) {
+            return {
+              chapter: matchingChunk.chapter || s.chapter || "Overview",
+              section: matchingChunk.section || s.section || "General",
+              pageStart: matchingChunk.pageStart || s.pageStart || 1,
+              pageEnd: matchingChunk.pageEnd || s.pageEnd || 1,
+              chunkId: matchingChunk.id
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+    }
+
+    if (sources.length === 0) {
+      sources = chunks.map((c) => ({
         chapter: c.chapter || "Overview",
         section: c.section || "General",
         pageStart: c.pageStart || 1,
         pageEnd: c.pageEnd || 1,
         chunkId: c.id
-      }))
+      }));
+    }
+
+    return {
+      success: true,
+      answer: parsedJSON.answer,
+      hasRelevantContent: true,
+      keyPoints: Array.isArray(parsedJSON.keyPoints) ? parsedJSON.keyPoints : [],
+      example: parsedJSON.example || null,
+      source: sources
     };
   }
 }

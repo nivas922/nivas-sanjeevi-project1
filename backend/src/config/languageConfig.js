@@ -64,6 +64,12 @@ export const SUPPORTED_LANGUAGES = {
   }
 };
 
+export const isLanguageSupported = (langCode) => {
+  if (!langCode || typeof langCode !== "string") return false;
+  const code = langCode.toLowerCase().trim();
+  return Boolean(SUPPORTED_LANGUAGES[code]);
+};
+
 export const getLanguageConfig = (langCode = "en") => {
   const code = (langCode || "en").toLowerCase().trim();
   return SUPPORTED_LANGUAGES[code] || SUPPORTED_LANGUAGES.en;

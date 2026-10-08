@@ -26,7 +26,7 @@ import { DEPARTMENTS } from "../data/translations";
 export const AIQuiz = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { quizzes, refreshLearningData } = useLearning();
+  const { quizzes, textbooks, currentBook, refreshLearningData } = useLearning();
   const { showWarning, showSuccess } = useToast();
 
   const quizId = searchParams.get("id");
@@ -50,10 +50,18 @@ export const AIQuiz = () => {
     const loadQuiz = async () => {
       setLoading(true);
       if (quizId) {
-        const found = quizzes.find((q) => q.id === quizId);
+        let found = quizzes.find((q) => q.id === quizId);
+        if (!found) {
+          try {
+            found = await api.getQuizById(quizId);
+          } catch (e) {
+            console.warn("Could not fetch quiz by id:", e.message);
+          }
+        }
         if (found) {
           setQuiz(found);
-          setTimeLeft(found.timeLimitMinutes * 60);
+          const limit = found.timeLimitMinutes || Math.max(5, Math.ceil((found.questions?.length || 5) * 1.5));
+          setTimeLeft(limit * 60);
           setLoading(false);
           return;
         }
@@ -62,17 +70,22 @@ export const AIQuiz = () => {
       if (quizzes.length > 0) {
         setQuiz(quizzes[0]);
         setTimeLeft(quizzes[0].timeLimitMinutes * 60);
-      } else {
-        // Auto generate foundational quiz if user is taking their first quiz
-        const autoQuiz = await api.generateQuiz({
-          topic: "Computer Science & Engineering Fundamentals",
-          subject: "Engineering Fundamentals",
-          difficulty: "Intermediate",
-          questionCount: 5
-        });
-        setQuiz(autoQuiz);
-        setTimeLeft(autoQuiz.timeLimitMinutes * 60);
-        refreshLearningData();
+      } else if (textbooks && textbooks.length > 0) {
+        // Auto generate foundational quiz from user's uploaded textbook
+        try {
+          const autoQuiz = await api.generateQuiz({
+            textbookId: textbooks[0].id,
+            topic: textbooks[0].subject || "Core Concepts",
+            subject: textbooks[0].title,
+            difficulty: "Intermediate",
+            questionCount: 5
+          });
+          setQuiz(autoQuiz);
+          setTimeLeft(autoQuiz.timeLimitMinutes * 60);
+          refreshLearningData();
+        } catch (e) {
+          console.warn("Could not auto-generate quiz:", e.message);
+        }
       }
       setLoading(false);
     };
@@ -109,10 +122,18 @@ export const AIQuiz = () => {
     setIsGeneratingCustom(true);
     const count = getEffectiveCustomCount();
 
+    const targetBook = currentBook || (textbooks && textbooks.length > 0 ? textbooks[0] : null);
+    if (!targetBook) {
+      showWarning("Please upload a textbook first to generate an AI quiz.");
+      setIsGeneratingCustom(false);
+      return;
+    }
+
     try {
       const newQuiz = await api.generateQuiz({
-        topic: customTopic || "Academic Fundamentals",
-        subject: customSubject || "Engineering",
+        textbookId: targetBook.id,
+        topic: customTopic || targetBook.subject || "Academic Fundamentals",
+        subject: customSubject || targetBook.title || "Engineering",
         difficulty: customDifficulty,
         questionCount: count
       });

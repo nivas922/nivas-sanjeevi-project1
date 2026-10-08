@@ -1,4 +1,5 @@
 import { body, param, validationResult } from "express-validator";
+import { isLanguageSupported, SUPPORTED_LANGUAGES } from "../config/languageConfig.js";
 
 export const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
@@ -96,6 +97,22 @@ export const validateSummarize = [
     if (!targetBookId) {
       throw new Error("book_id is required");
     }
+    const lang = reqBody.target_language || reqBody.language;
+    if (lang && !isLanguageSupported(lang)) {
+      throw new Error(`Unsupported target language: '${lang}'. Supported languages: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}`);
+    }
+    return true;
+  }),
+  handleValidationErrors
+];
+
+export const validateTranslateSummary = [
+  param("id").trim().notEmpty().withMessage("Summary ID is required"),
+  body().custom((reqBody) => {
+    const lang = reqBody.target_language || reqBody.language;
+    if (lang && !isLanguageSupported(lang)) {
+      throw new Error(`Unsupported target language: '${lang}'. Supported languages: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}`);
+    }
     return true;
   }),
   handleValidationErrors
@@ -103,7 +120,15 @@ export const validateSummarize = [
 
 export const validateTTS = [
   body("text").trim().notEmpty().isLength({ max: 5000 }).withMessage("Text is required and must not exceed 5000 characters"),
-  body("language").optional().trim().isLength({ min: 2, max: 10 }).withMessage("Invalid language code"),
+  body("language")
+    .optional()
+    .trim()
+    .custom((lang) => {
+      if (lang && !isLanguageSupported(lang)) {
+        throw new Error(`Unsupported language code for TTS: '${lang}'. Supported languages: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}`);
+      }
+      return true;
+    }),
   handleValidationErrors
 ];
 
@@ -113,9 +138,25 @@ export const validateGenerateQuiz = [
     if (!targetBookId) {
       throw new Error("book_id is required");
     }
+
+    const qCount = reqBody.num_questions ?? reqBody.questionCount;
+    if (qCount !== undefined) {
+      const parsed = Number(qCount);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 30) {
+        throw new Error("Question count must be an integer between 1 and 30");
+      }
+    }
+
+    const diff = reqBody.difficulty;
+    if (diff !== undefined) {
+      const allowed = ["easy", "medium", "hard", "beginner", "intermediate", "advanced"];
+      if (typeof diff !== "string" || !allowed.includes(diff.trim().toLowerCase())) {
+        throw new Error("Invalid difficulty. Allowed values: easy, medium, hard (or beginner, intermediate, advanced)");
+      }
+    }
+
     return true;
   }),
-  body("num_questions").optional().isInt({ min: 1, max: 30 }).withMessage("num_questions must be between 1 and 30"),
   handleValidationErrors
 ];
 
@@ -125,16 +166,38 @@ export const validateSubmitQuiz = [
     if (!targetQuizId) {
       throw new Error("quiz_id is required");
     }
+    const ans = reqBody.answers ?? reqBody.selectedAnswers;
+    if (ans === undefined || ans === null) {
+      throw new Error("answers object or array is required");
+    }
+    if (typeof ans !== "object") {
+      throw new Error("answers must be an object or array");
+    }
     return true;
   }),
-  body("answers").notEmpty().withMessage("answers object is required"),
   handleValidationErrors
 ];
 
 export const validateProfile = [
   body("name").optional().trim().isLength({ min: 1, max: 100 }).withMessage("Name must be between 1 and 100 characters"),
   body("role").optional().trim().isLength({ min: 1, max: 100 }).withMessage("Role must be between 1 and 100 characters"),
-  body("preferred_language").optional().trim().isLength({ min: 2, max: 10 }).withMessage("Invalid language code"),
-  body("preferredLanguage").optional().trim().isLength({ min: 2, max: 10 }).withMessage("Invalid language code"),
+  body("preferred_language")
+    .optional()
+    .trim()
+    .custom((lang) => {
+      if (lang && !isLanguageSupported(lang)) {
+        throw new Error(`Unsupported language code: '${lang}'. Supported languages: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}`);
+      }
+      return true;
+    }),
+  body("preferredLanguage")
+    .optional()
+    .trim()
+    .custom((lang) => {
+      if (lang && !isLanguageSupported(lang)) {
+        throw new Error(`Unsupported language code: '${lang}'. Supported languages: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}`);
+      }
+      return true;
+    }),
   handleValidationErrors
 ];

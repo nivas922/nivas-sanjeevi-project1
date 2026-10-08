@@ -317,9 +317,10 @@ const runPhase6Tests = async () => {
       body: JSON.stringify({ target_language: "xx" })
     });
     const data15 = await res15.json();
-    assert.strictEqual(res15.status, 200, "Should handle unknown language with graceful fallback config");
-    assert.ok(data15.translation, "Fallback translation returned");
-    console.log("  PASSED: Unsupported language code handled gracefully.\n");
+    assert.strictEqual(res15.status, 400, "Unsupported language code should return 400 Bad Request");
+    assert.strictEqual(data15.success, false, "Success should be false");
+    assert.ok(data15.error || data15.details, "Error message should be present");
+    console.log("  PASSED: Unsupported language code rejected cleanly with 400 Bad Request.\n");
 
     // -------------------------------------------------------------
     // TEST 16: Translation Provider Failure Handling

@@ -37,8 +37,8 @@ export const GoogleLoginButton = ({ onSuccess, onError, loading, text = "Continu
 
   const handleClick = () => {
     if (!clientId) {
-      showInfo("Demo Mode: Google Client ID not configured. Signing in with Verified Google Student profile...");
-      onSuccess("demo_google_id_token_12345");
+      showError("Google Client ID is not configured (missing VITE_GOOGLE_CLIENT_ID). Google Sign-In is unavailable.");
+      onError?.(new Error("Google Client ID is not configured."));
       return;
     }
 
@@ -63,8 +63,11 @@ export const GoogleLoginButton = ({ onSuccess, onError, loading, text = "Continu
         <button
           type="button"
           onClick={handleClick}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-bold shadow-soft-sm hover:border-slate-300 transition-all cursor-pointer disabled:opacity-50"
+          disabled={loading || !clientId}
+          title={!clientId ? "Google Sign-In is unavailable: VITE_GOOGLE_CLIENT_ID is not configured" : ""}
+          className={`w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-bold shadow-soft-sm hover:border-slate-300 transition-all cursor-pointer ${
+            !clientId ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-400" : ""
+          } disabled:opacity-50`}
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <path
@@ -84,7 +87,9 @@ export const GoogleLoginButton = ({ onSuccess, onError, loading, text = "Continu
               d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
             />
           </svg>
-          <span>{loading ? "Authenticating with Google..." : text}</span>
+          <span>
+            {!clientId ? "Google Sign-In (Client ID Missing)" : loading ? "Authenticating with Google..." : text}
+          </span>
         </button>
       )}
     </div>

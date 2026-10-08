@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { env } from "../config/env.js";
-import { getLanguageConfig } from "../config/languageConfig.js";
+import { getLanguageConfig, isLanguageSupported, SUPPORTED_LANGUAGES } from "../config/languageConfig.js";
 
 export class TtsService {
   /**
@@ -11,6 +11,12 @@ export class TtsService {
   static async synthesizeSpeech({ text, language = "en" }) {
     if (!text || typeof text !== "string" || text.trim().length === 0) {
       const err = new Error("Text is required for speech synthesis.");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (language && !isLanguageSupported(language)) {
+      const err = new Error(`Unsupported language code for TTS: '${language}'. Supported languages: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}`);
       err.statusCode = 400;
       throw err;
     }
@@ -55,18 +61,24 @@ export class TtsService {
         audioBuffer = await this.fetchGoogleTtsAudio(cleanText, langConfig.ttsCode);
         isRealAudio = true;
       } catch (err) {
-        console.warn(`[TTS-Service] Real TTS provider notice (${err.message}). Using fallback synthesis.`);
+        console.warn(`[TTS-Service] Real TTS provider notice (${err.message}).`);
       }
     }
 
-    // 4. Fallback Audio Frame (if offline / test environment)
+    // 4. Fallback Audio Handling
     if (!audioBuffer) {
-      // Minimal valid MPEG-1 Layer 3 audio frame
-      audioBuffer = Buffer.from([
-        0xff, 0xfb, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-      ]);
+      if (env.NODE_ENV === "test") {
+        // Minimal valid MPEG-1 Layer 3 audio frame strictly for automated test suites
+        audioBuffer = Buffer.from([
+          0xff, 0xfb, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]);
+      } else {
+        const err = new Error("TTS provider failed to synthesize audio. Please use browser speech synthesis.");
+        err.statusCode = 502;
+        throw err;
+      }
     }
 
     // 5. Write audio buffer to upload directory

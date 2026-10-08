@@ -16,6 +16,7 @@ import {
   Download,
   Flame
 } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useLearning } from "../context/LearningContext";
 import { useToast } from "../context/ToastContext";
@@ -26,21 +27,28 @@ import { Button } from "../components/common/Button";
 
 export const ClearDoubtsPage = () => {
   const { user } = useAuth();
-  const { activeLanguage, textbooks } = useLearning();
+  const { activeLanguage, textbooks, currentBook } = useLearning();
   const { showSuccess, showInfo, showWarning } = useToast();
+  const location = useLocation();
 
   const [selectedLanguage, setSelectedLanguage] = useState(activeLanguage || "en");
-  const [selectedBookId, setSelectedBookId] = useState(textbooks && textbooks.length > 0 ? textbooks[0].id : "");
+  const [selectedBookId, setSelectedBookId] = useState(
+    location.state?.bookId || currentBook?.id || (textbooks && textbooks.length === 1 ? textbooks[0].id : "")
+  );
   const [inputQuery, setInputQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [speakingId, setSpeakingId] = useState(null);
 
   useEffect(() => {
-    if (!selectedBookId && textbooks && textbooks.length > 0) {
+    if (location.state?.bookId) {
+      setSelectedBookId(location.state.bookId);
+    } else if (!selectedBookId && currentBook?.id) {
+      setSelectedBookId(currentBook.id);
+    } else if (!selectedBookId && textbooks && textbooks.length === 1) {
       setSelectedBookId(textbooks[0].id);
     }
-  }, [textbooks]);
+  }, [location.state?.bookId, currentBook, textbooks]);
 
   const messagesEndRef = useRef(null);
 
@@ -81,14 +89,8 @@ Select a textbook from the dropdown above to start.`,
   const handleSendMessage = async (textToSend = inputQuery) => {
     if (!textToSend || textToSend.trim().length === 0) return;
 
-    if (!selectedBookId && textbooks && textbooks.length > 0) {
-      setSelectedBookId(textbooks[0].id);
-    }
-
-    const currentBookId = selectedBookId || (textbooks && textbooks[0] ? textbooks[0].id : null);
-
-    if (!currentBookId) {
-      showWarning("Please upload a textbook first before asking doubts.");
+    if (!selectedBookId) {
+      showWarning("Please select a textbook first before asking doubts.");
       return;
     }
 
@@ -104,7 +106,7 @@ Select a textbook from the dropdown above to start.`,
     setLoading(true);
 
     try {
-      const response = await aiTutorService.askDoubt(textToSend, selectedLanguage, currentBookId);
+      const response = await aiTutorService.askDoubt(textToSend, selectedLanguage, selectedBookId);
       const aiResponse = {
         id: `ai-${Date.now()}`,
         sender: "ai",
@@ -193,6 +195,9 @@ Select a textbook from the dropdown above to start.`,
                 onChange={(e) => setSelectedBookId(e.target.value)}
                 className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer max-w-[180px] truncate"
               >
+                <option value="" className="text-slate-900 font-semibold">
+                  -- Select Textbook --
+                </option>
                 {textbooks.map((b) => (
                   <option key={b.id} value={b.id} className="text-slate-900 font-semibold">
                     {b.title}

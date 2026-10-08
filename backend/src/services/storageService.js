@@ -10,28 +10,39 @@ export class StorageService {
   }
 
   static async extractDocumentText(filePath, mimeType) {
-    try {
-      if (!fs.existsSync(filePath)) {
-        return "";
-      }
-
-      const ext = path.extname(filePath).toLowerCase();
-
-      if (ext === ".pdf" || mimeType === "application/pdf") {
-        const extraction = await PdfExtractorService.extractPagesFromFile(filePath);
-        return extraction.fullText || "";
-      }
-
-      if (ext === ".txt") {
-        return PdfExtractorService.normalizeText(fs.readFileSync(filePath, "utf-8"));
-      }
-
-      // For scanned images or docs, return descriptive extracted placeholder
-      return `Academic textbook content extracted from ${path.basename(filePath)}. Topics: Core Architecture, System Fundamentals, Protocols, and Algorithms.`;
-    } catch (err) {
-      console.warn("Text extraction notice:", err.message);
-      return `Extracted academic textbook content from ${path.basename(filePath)}.`;
+    if (!fs.existsSync(filePath)) {
+      const err = new Error("Document file not found on server.");
+      err.statusCode = 404;
+      throw err;
     }
+
+    const ext = path.extname(filePath).toLowerCase();
+
+    if (ext === ".pdf" || mimeType === "application/pdf") {
+      const extraction = await PdfExtractorService.extractPagesFromFile(filePath);
+      return extraction.fullText;
+    }
+
+    if (ext === ".txt") {
+      const txt = PdfExtractorService.normalizeText(fs.readFileSync(filePath, "utf-8"));
+      if (!txt || txt.trim().length === 0) {
+        const err = new Error("This document does not contain extractable text. Please upload a text-based PDF or document.");
+        err.statusCode = 400;
+        throw err;
+      }
+      return txt;
+    }
+
+    const imageExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+    if (imageExtensions.includes(ext) || (mimeType && mimeType.startsWith("image/"))) {
+      const err = new Error("This file does not contain extractable text. Please upload a text-based PDF.");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const err = new Error("This document format does not contain extractable text. Please upload a text-based PDF.");
+    err.statusCode = 400;
+    throw err;
   }
 
   static async processAndStoreDocument({ bookId, filePath, mimeType }) {

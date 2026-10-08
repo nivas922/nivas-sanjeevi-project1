@@ -1,5 +1,3 @@
-import { MULTILINGUAL_SUMMARIES } from "../data/translations";
-
 // Comprehensive English-to-Indian language dictionary for instant translation
 const VOCABULARY_MAP = {
   ta: {
@@ -248,10 +246,6 @@ export const translatorService = {
   translateText(text, targetLang = "ta", sourceLang = "en") {
     if (!text) return "";
     if (sourceLang === targetLang) return text;
-
-    if (MULTILINGUAL_SUMMARIES[targetLang] && (text.includes("Transmission Control") || text.includes("Transport Layer") || text.includes("TCP"))) {
-      return MULTILINGUAL_SUMMARIES[targetLang].summary;
-    }
 
     const dict = VOCABULARY_MAP[targetLang];
     if (!dict) return text;

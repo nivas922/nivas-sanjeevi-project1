@@ -14,7 +14,7 @@ import {
   Check
 } from "lucide-react";
 import { TextToSpeech } from "../components/tts/TextToSpeech";
-import { SUPPORTED_LANGUAGES, MULTILINGUAL_SUMMARIES } from "../data/translations";
+import { SUPPORTED_LANGUAGES } from "../data/translations";
 import { translatorService } from "../services/translatorService";
 import { useToast } from "../context/ToastContext";
 import { useLearning } from "../context/LearningContext";

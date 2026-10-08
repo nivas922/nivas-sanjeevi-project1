@@ -19,8 +19,10 @@ export class AuthService {
 
     let payload;
     try {
-      // In test mode or when testing tokens:
-      if ((env.NODE_ENV === "test" || process.env.NODE_ENV === "test") && id_token.startsWith("mock_valid_google_token_")) {
+      const isTestMode = env.NODE_ENV === "test" || process.env.NODE_ENV === "test";
+      const isTestMock = isTestMode && id_token.startsWith("mock_valid_google_token_");
+
+      if (isTestMock) {
         const email = id_token.replace("mock_valid_google_token_", "");
         payload = {
           email,
@@ -29,15 +31,30 @@ export class AuthService {
           picture: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`
         };
       } else {
-        const ticket = await googleClient.verifyIdToken({
+        // Pre-validate token structure: a real Google ID token is a signed JWT with exactly 3 dot-separated segments
+        const segments = id_token.trim().split(".");
+        if (segments.length !== 3 || segments.some(seg => seg.length === 0)) {
+          const err = new Error("Google verification failed: malformed ID token (expected 3 dot-separated segments).");
+          err.statusCode = 401;
+          throw err;
+        }
+
+        if (!env.GOOGLE_CLIENT_ID) {
+          const err = new Error("Google authentication is unavailable: GOOGLE_CLIENT_ID is not configured on the backend.");
+          err.statusCode = 500;
+          throw err;
+        }
+
+        const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
+        const ticket = await client.verifyIdToken({
           idToken: id_token,
-          audience: env.GOOGLE_CLIENT_ID || undefined
+          audience: env.GOOGLE_CLIENT_ID
         });
         payload = ticket.getPayload();
       }
     } catch (verifyErr) {
       const err = new Error(`Google verification failed: ${verifyErr.message || "Invalid ID token"}`);
-      err.statusCode = 401;
+      err.statusCode = verifyErr.statusCode || 401;
       throw err;
     }
 
