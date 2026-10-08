@@ -1,8 +1,9 @@
 import { AdaptiveLearningService } from "../services/adaptiveLearningService.js";
 import { Book } from "../models/Book.js";
+import { User } from "../models/User.js";
 
 export class RecommendationController {
-  // GET /recommendations/:user_id
+  // GET /recommendations or GET /recommendations/:user_id
   static async getRecommendations(req, res, next) {
     try {
       const targetUserId = req.params.user_id || req.userId;
@@ -16,9 +17,23 @@ export class RecommendationController {
         });
       }
 
+      const user = await User.findById(targetUserId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          error: "User not found."
+        });
+      }
+
       if (bookId) {
         const book = await Book.findById(bookId);
-        if (book && book.user_id && book.user_id !== req.userId) {
+        if (!book) {
+          return res.status(404).json({
+            success: false,
+            error: "Textbook not found."
+          });
+        }
+        if (book.user_id && book.user_id !== req.userId) {
           return res.status(403).json({
             success: false,
             error: "You do not have authorization to view recommendations for this textbook."
@@ -35,7 +50,9 @@ export class RecommendationController {
         success: true,
         status: "success",
         user_id: targetUserId,
-        recommendations
+        book_id: bookId,
+        recommendations,
+        insufficientHistory: recommendations.length === 0
       });
     } catch (error) {
       next(error);

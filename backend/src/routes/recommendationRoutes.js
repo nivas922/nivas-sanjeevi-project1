@@ -4,7 +4,8 @@ import { authGuard } from "../middleware/auth.js";
 
 const router = Router();
 
-// GET /recommendations/:user_id
+// GET /recommendations & GET /recommendations/:user_id
+router.get("/recommendations", authGuard, RecommendationController.getRecommendations);
 router.get("/recommendations/:user_id", authGuard, RecommendationController.getRecommendations);
 
 export default router;

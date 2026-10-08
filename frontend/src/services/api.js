@@ -641,16 +641,17 @@ export const api = {
     }
   },
 
-  async getRecommendations() {
+  async getRecommendations(bookId = null) {
     const user = storageService.getUser();
     if (user && user.id) {
       try {
-        const res = await fetch(`${API_BASE_URL}/recommendations/${user.id}`, {
+        const query = bookId ? `?bookId=${encodeURIComponent(bookId)}` : "";
+        const res = await fetch(`${API_BASE_URL}/recommendations/${user.id}${query}`, {
           headers: getAuthHeaders()
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.recommendations) {
+          if (Array.isArray(data.recommendations)) {
             return data.recommendations;
           }
         } else if (res.status === 401) {
@@ -660,9 +661,31 @@ export const api = {
       } catch (err) {
         if (err.status === 401) throw err;
         console.warn("Recommendations API notice:", err.message);
+        throw err;
       }
     }
-    return storageService.getRecommendations();
+    return [];
+  },
+
+  async getAdaptiveLearning(bookId = null) {
+    try {
+      const path = bookId ? `/adaptive-learning/${encodeURIComponent(bookId)}` : `/adaptive-learning`;
+      const res = await fetch(`${API_BASE_URL}${path}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        return await res.json();
+      } else if (res.status === 401) {
+        storageService.removeToken();
+        throw new Error("Your session has expired. Please sign in again.");
+      }
+      const data = await res.json();
+      throw new Error(data.error || "Failed to fetch adaptive learning data.");
+    } catch (err) {
+      if (err.status === 401) throw err;
+      console.warn("Adaptive learning API notice:", err.message);
+      throw err;
+    }
   },
 
   async getAnalytics() {
@@ -677,6 +700,7 @@ export const api = {
         if (progRes.ok) {
           const progData = await progRes.json();
           const actData = actRes.ok ? await actRes.json() : { activities: [] };
+          const realQuizHistory = progData.quizHistory || progData.quiz_history || [];
 
           return {
             user,
@@ -686,11 +710,13 @@ export const api = {
               quizzesCompleted: progData.stats.quizzesCompleted || 0,
               averageScore: progData.stats.averageScore || 0,
               streakDays: user.streakDays || 0,
-              totalStudyHours: user.totalStudyHours || 0
+              totalStudyHours: user.totalStudyHours || 0,
+              scoreTrend: progData.stats.scoreTrend || null,
+              scoreTrendPositive: progData.stats.scoreTrendPositive ?? true
             },
             subjectProgress: progData.subjectProgress || [],
             activities: actData.activities || [],
-            quizHistory: storageService.getQuizAttempts()
+            quizHistory: realQuizHistory
           };
         } else if (progRes.status === 401) {
           storageService.removeToken();
@@ -700,7 +726,6 @@ export const api = {
       }
     }
 
-    const attempts = storageService.getQuizAttempts();
     const textbooks = storageService.getTextbooks();
     const summaries = storageService.getSummaries();
     const subjects = storageService.getSubjectProgress();
@@ -713,10 +738,12 @@ export const api = {
         quizzesCompleted: user.quizzesTaken || 0,
         averageScore: user.averageScore || 0,
         streakDays: user.streakDays || 0,
-        totalStudyHours: user.totalStudyHours || 0
+        totalStudyHours: user.totalStudyHours || 0,
+        scoreTrend: null,
+        scoreTrendPositive: true
       },
       subjectProgress: subjects,
-      quizHistory: attempts
+      quizHistory: []
     };
   }
 };

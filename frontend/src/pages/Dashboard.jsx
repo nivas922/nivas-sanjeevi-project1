@@ -25,11 +25,37 @@ export const Dashboard = () => {
   const { textbooks, summaries, recommendations } = useLearning();
   const [activities, setActivities] = useState([]);
   const [subjectProgress, setSubjectProgress] = useState([]);
+  const [dashboardRecs, setDashboardRecs] = useState([]);
+  const [scoreTrend, setScoreTrend] = useState(null);
+  const [scoreTrendPositive, setScoreTrendPositive] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
     setActivities(storageService.getActivities());
     setSubjectProgress(storageService.getSubjectProgress());
+
+    let isMounted = true;
+    const loadRealData = async () => {
+      try {
+        const [analytics, recs] = await Promise.all([
+          api.getAnalytics().catch(() => null),
+          api.getRecommendations().catch(() => [])
+        ]);
+        if (isMounted) {
+          if (analytics?.stats?.scoreTrend) {
+            setScoreTrend(analytics.stats.scoreTrend);
+            setScoreTrendPositive(analytics.stats.scoreTrendPositive ?? true);
+          }
+          if (Array.isArray(recs) && recs.length > 0) {
+            setDashboardRecs(recs);
+          }
+        }
+      } catch {
+        // Graceful handling
+      }
+    };
+    loadRealData();
+    return () => { isMounted = false; };
   }, []);
 
   const getGreeting = () => {
@@ -39,7 +65,8 @@ export const Dashboard = () => {
     return "Good Evening";
   };
 
-  const topRecommendation = recommendations && recommendations.length > 0 ? recommendations[0] : null;
+  const activeRecs = dashboardRecs.length > 0 ? dashboardRecs : recommendations;
+  const topRecommendation = activeRecs && activeRecs.length > 0 ? activeRecs[0] : null;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
@@ -109,8 +136,8 @@ export const Dashboard = () => {
           value={`${user?.averageScore || 0}%`}
           subtitle="Across all quizzes"
           icon={Award}
-          trend={user?.quizzesTaken > 0 ? "+5%" : null}
-          trendPositive={true}
+          trend={scoreTrend}
+          trendPositive={scoreTrendPositive}
           colorScheme="emerald"
         />
         <StatCard

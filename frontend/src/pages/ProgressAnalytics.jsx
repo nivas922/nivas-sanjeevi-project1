@@ -52,6 +52,13 @@ export const ProgressAnalytics = () => {
   const subjects = analytics.subjectProgress || [];
   const hasSubjects = subjects.length > 0;
 
+  const calculatedTrend = analytics.stats?.scoreTrend || (quizHistory.length >= 2
+    ? `${quizHistory[quizHistory.length - 1].percentage >= quizHistory[0].percentage ? "+" : ""}${quizHistory[quizHistory.length - 1].percentage - quizHistory[0].percentage}%`
+    : null);
+  const isTrendPositive = analytics.stats?.scoreTrendPositive ?? (quizHistory.length >= 2
+    ? quizHistory[quizHistory.length - 1].percentage >= quizHistory[0].percentage
+    : true);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-300 pb-12">
       {/* Header */}
@@ -82,8 +89,8 @@ export const ProgressAnalytics = () => {
           value={`${analytics.stats.averageScore || 0}%`}
           subtitle="Across all quizzes"
           icon={Award}
-          trend={hasQuizHistory ? "+5%" : null}
-          trendPositive={true}
+          trend={calculatedTrend}
+          trendPositive={isTrendPositive}
           colorScheme="brand"
         />
         <StatCard

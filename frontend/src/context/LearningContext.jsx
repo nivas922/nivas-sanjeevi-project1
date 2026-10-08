@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { storageService } from "../services/storageService";
 import { SUPPORTED_LANGUAGES } from "../data/demoData";
+import { api } from "../services/api";
 
 const LearningContext = createContext(null);
 
@@ -13,11 +14,21 @@ export const LearningProvider = ({ children }) => {
   const [currentBook, setCurrentBook] = useState(null);
   const [activeQuiz, setActiveQuiz] = useState(null);
 
-  const refreshLearningData = () => {
+  const refreshLearningData = async () => {
     setTextbooks(storageService.getTextbooks());
     setSummaries(storageService.getSummaries());
     setQuizzes(storageService.getQuizzes());
-    setRecommendations(storageService.getRecommendations());
+
+    try {
+      const recs = await api.getRecommendations();
+      if (Array.isArray(recs)) {
+        setRecommendations(recs);
+      } else {
+        setRecommendations([]);
+      }
+    } catch {
+      setRecommendations([]);
+    }
   };
 
   useEffect(() => {

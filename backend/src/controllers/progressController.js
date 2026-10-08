@@ -2,6 +2,7 @@ import { Progress } from "../models/Progress.js";
 import { ActivityLog } from "../models/ActivityLog.js";
 import { User } from "../models/User.js";
 import { Book } from "../models/Book.js";
+import { Quiz } from "../models/Quiz.js";
 import { AdaptiveLearningService } from "../services/adaptiveLearningService.js";
 
 export class ProgressController {
@@ -42,6 +43,32 @@ export class ProgressController {
         };
       });
 
+      // Real quiz attempts from SQLite database
+      const quizzes = await Quiz.findByUserId(targetUserId);
+      const submittedQuizzes = (quizzes || [])
+        .filter((q) => q.score !== null && q.score !== undefined)
+        .sort((a, b) => new Date(a.taken_at || 0) - new Date(b.taken_at || 0));
+
+      const quizHistory = submittedQuizzes.map((q) => ({
+        id: q.id,
+        quizId: q.id,
+        percentage: q.percentage || 0,
+        score: q.score || 0,
+        totalQuestions: q.totalQuestions || 0,
+        performanceLevel: q.performanceLevel,
+        takenAt: q.taken_at,
+        bookId: q.book_id
+      }));
+
+      // Calculate real score trend from chronological quiz history
+      let scoreTrend = null;
+      let scoreTrendPositive = true;
+      if (quizHistory.length >= 2) {
+        const delta = quizHistory[quizHistory.length - 1].percentage - quizHistory[0].percentage;
+        scoreTrend = delta >= 0 ? `+${delta}%` : `${delta}%`;
+        scoreTrendPositive = delta >= 0;
+      }
+
       return res.status(200).json({
         success: true,
         status: "success",
@@ -54,10 +81,14 @@ export class ProgressController {
           quizzesCompleted: aggregate.quizzes_taken,
           quizzes_taken: aggregate.quizzes_taken,
           averageScore: aggregate.average_score,
-          average_score: aggregate.average_score
+          average_score: aggregate.average_score,
+          scoreTrend,
+          scoreTrendPositive
         },
         subjectProgress: themedSubjects,
-        subject_progress: themedSubjects
+        subject_progress: themedSubjects,
+        quizHistory,
+        quiz_history: quizHistory
       });
     } catch (error) {
       next(error);

@@ -221,44 +221,13 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.SUBJECT_PROGRESS, JSON.stringify(subjects));
   },
 
-  updateAdaptiveRecommendations(lastAttempt) {
-    const recs = this.getRecommendations();
-    if (lastAttempt.percentage < 60) {
-      const weakRec = {
-        id: "rec-" + Date.now(),
-        topic: lastAttempt.topic,
-        subject: lastAttempt.subject || "Academic Study",
-        reason: `Your recent score was ${lastAttempt.percentage}%. System identified this as a weak topic requiring revision.`,
-        recommendedDifficulty: "Beginner",
-        estimatedMinutes: 8,
-        actionType: "summary",
-        targetSummaryId: lastAttempt.summaryId || null,
-        targetQuizId: lastAttempt.quizId,
-        urgency: "High",
-        badge: "Weak Topic Detected"
-      };
-      const filtered = recs.filter(r => r.topic !== lastAttempt.topic);
-      localStorage.setItem(STORAGE_KEYS.RECOMMENDATIONS, JSON.stringify([weakRec, ...filtered]));
-    } else if (lastAttempt.percentage >= 80) {
-      const advancedRec = {
-        id: "rec-" + Date.now(),
-        topic: lastAttempt.topic + " (Advanced Applications)",
-        subject: lastAttempt.subject || "Academic Study",
-        reason: `Great score of ${lastAttempt.percentage}%! System unlocked advanced learning challenges.`,
-        recommendedDifficulty: "Advanced",
-        estimatedMinutes: 12,
-        actionType: "quiz",
-        targetQuizId: lastAttempt.quizId,
-        urgency: "Low",
-        badge: "Level Up"
-      };
-      const filtered = recs.filter(r => r.topic !== lastAttempt.topic);
-      localStorage.setItem(STORAGE_KEYS.RECOMMENDATIONS, JSON.stringify([advancedRec, ...filtered]));
-    }
+  updateAdaptiveRecommendations() {
+    // Phase 7: Recommendations are generated dynamically by backend AdaptiveLearningService
+    // from full student quiz history, not stored as static or single-attempt items in localStorage.
   },
 
   getRecommendations() {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.RECOMMENDATIONS) || "[]");
+    return [];
   },
 
   getSubjectProgress() {

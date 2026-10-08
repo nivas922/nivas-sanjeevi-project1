@@ -73,6 +73,7 @@ export class AdaptiveLearningService {
         if (!topicStatsMap.has(topicName)) {
           topicStatsMap.set(topicName, {
             topic: topicName,
+            bookId: quiz.book_id || null,
             attempts: 0,
             totalQuestions: 0,
             correctCount: 0,
@@ -100,26 +101,43 @@ export class AdaptiveLearningService {
 
       // Trend calculation
       let trend = "stable";
-      if (recentWindow.length >= 2) {
-        const delta = recentWindow[recentWindow.length - 1] - recentWindow[0];
-        if (delta >= ADAPTIVE_CONFIG.improvingTrendThreshold) {
-          trend = "improving";
-        } else if (delta <= -ADAPTIVE_CONFIG.improvingTrendThreshold) {
-          trend = "declining";
+      if (data.scores.length >= 2) {
+        // Check for mixed / fluctuating trend (both significant positive and negative steps)
+        const deltas = [];
+        for (let i = 1; i < data.scores.length; i++) {
+          deltas.push(data.scores[i] - data.scores[i - 1]);
+        }
+
+        const hasSubstantialRise = deltas.some((d) => d >= 15);
+        const hasSubstantialDrop = deltas.some((d) => d <= -15);
+
+        if (hasSubstantialRise && hasSubstantialDrop) {
+          trend = "mixed";
+        } else {
+          const delta = recentWindow[recentWindow.length - 1] - recentWindow[0];
+          if (delta >= ADAPTIVE_CONFIG.improvingTrendThreshold) {
+            trend = "improving";
+          } else if (delta <= -ADAPTIVE_CONFIG.improvingTrendThreshold) {
+            trend = "declining";
+          }
         }
       }
 
-      // Learning State Classification
+      // Learning State Classification (Deterministic & Explainable)
       let learningState = "learning";
-      if (accuracy < ADAPTIVE_CONFIG.weakAccuracyThreshold || latestScore < 50) {
-        learningState = "needs_revision";
-      } else if (
+      if (
         accuracy >= ADAPTIVE_CONFIG.masteryAccuracyThreshold &&
         data.attempts >= ADAPTIVE_CONFIG.minimumAttemptsForMastery
       ) {
         learningState = "mastered";
-      } else if (trend === "improving" || latestScore >= 75) {
+      } else if (trend === "improving" && latestScore >= 60 && data.attempts >= 2) {
         learningState = "improving";
+      } else if (accuracy < ADAPTIVE_CONFIG.weakAccuracyThreshold || latestScore < 50) {
+        learningState = "needs_revision";
+      } else if (trend === "declining") {
+        learningState = "declining";
+      } else if (latestScore >= 75 || accuracy >= 75) {
+        learningState = "strong";
       }
 
       // Recommended Difficulty for this topic
@@ -133,6 +151,7 @@ export class AdaptiveLearningService {
 
       result.push({
         topic: topicName,
+        bookId: data.bookId || bookId || null,
         attempts: data.attempts,
         totalQuestions: data.totalQuestions,
         correctCount: data.correctCount,
@@ -155,7 +174,23 @@ export class AdaptiveLearningService {
   static async detectWeakTopics(userId, bookId = null) {
     const topics = await this.getTopicPerformance(userId, bookId);
     return topics.filter(
-      (t) => t.learningState === "needs_revision" || t.accuracy < ADAPTIVE_CONFIG.weakAccuracyThreshold
+      (t) =>
+        t.learningState === "needs_revision" ||
+        t.learningState === "declining" ||
+        t.accuracy < ADAPTIVE_CONFIG.weakAccuracyThreshold
+    );
+  }
+
+  /**
+   * 2b. Detect Strong Topics for a User
+   */
+  static async detectStrongTopics(userId, bookId = null) {
+    const topics = await this.getTopicPerformance(userId, bookId);
+    return topics.filter(
+      (t) =>
+        t.learningState === "mastered" ||
+        t.learningState === "strong" ||
+        t.accuracy >= ADAPTIVE_CONFIG.masteryAccuracyThreshold
     );
   }
 
@@ -178,8 +213,8 @@ export class AdaptiveLearningService {
     }
 
     // Book / Global overall recommended difficulty
-    const weakCount = topics.filter((t) => t.learningState === "needs_revision").length;
-    const masterCount = topics.filter((t) => t.learningState === "mastered").length;
+    const weakCount = topics.filter((t) => t.learningState === "needs_revision" || t.learningState === "declining").length;
+    const masterCount = topics.filter((t) => t.learningState === "mastered" || t.learningState === "strong").length;
 
     if (weakCount > topics.length / 2) {
       return "Beginner";
@@ -193,37 +228,17 @@ export class AdaptiveLearningService {
 
   /**
    * 4. Generate Personalized Recommendations with Dynamic Reasons
+   * Strictly based on actual student quiz history - no fake/starter fallbacks
    */
   static async generatePersonalizedRecommendations(userId, bookId = null) {
     const topicPerf = await this.getTopicPerformance(userId, bookId);
-    let books = await Book.findByUserId(userId);
-    if (bookId) {
-      books = books.filter((b) => b.id === bookId);
+
+    // If no performance data exists, return empty array without fabricating recommendations
+    if (topicPerf.length === 0) {
+      return [];
     }
 
     const recommendations = [];
-
-    // Zero-State Starter Recommendation for New Users
-    if (topicPerf.length === 0) {
-      const targetBook = books[0];
-      recommendations.push({
-        id: `rec-starter-${Date.now()}`,
-        type: "PRACTICE",
-        topic: targetBook ? `${targetBook.subject} Diagnostic Quiz` : "Textbook Foundations",
-        subject: targetBook ? targetBook.subject : "Academic Assessment",
-        reason: targetBook
-          ? `Complete a diagnostic quiz for '${targetBook.title}' to establish your personalized learning baseline.`
-          : "Take a diagnostic quiz to establish your baseline performance metrics.",
-        recommendedDifficulty: ADAPTIVE_CONFIG.defaultDifficulty,
-        estimatedMinutes: 8,
-        actionType: "quiz",
-        bookId: targetBook ? targetBook.id : null,
-        urgency: "Medium",
-        badge: "Diagnostic Starter"
-      });
-
-      return recommendations;
-    }
 
     // 1. Weak Topics (Needs Revision)
     const weakTopics = topicPerf.filter((t) => t.learningState === "needs_revision");
@@ -237,13 +252,33 @@ export class AdaptiveLearningService {
         recommendedDifficulty: wt.recommendedDifficulty,
         estimatedMinutes: 10,
         actionType: "summary",
-        bookId,
+        bookId: wt.bookId || bookId,
         urgency: "High",
         badge: "Weak Topic Detected"
       });
     }
 
-    // 2. Improving Topics (Keep Momentum)
+    // 2. Declining Topics (Skill Recovery)
+    const decliningTopics = topicPerf.filter(
+      (t) => t.learningState === "declining" || (t.trend === "declining" && t.learningState !== "needs_revision")
+    );
+    for (const dt of decliningTopics) {
+      recommendations.push({
+        id: `rec-dec-${dt.topic.replace(/\s+/g, "_")}`,
+        type: "REVISION",
+        topic: `${dt.topic} Practice`,
+        subject: "Performance Recovery",
+        reason: `Performance in '${dt.topic}' has declined recently (latest: ${dt.latestScore}%). Targeted revision and additional practice recommended.`,
+        recommendedDifficulty: dt.recommendedDifficulty,
+        estimatedMinutes: 10,
+        actionType: "quiz",
+        bookId: dt.bookId || bookId,
+        urgency: "High",
+        badge: "Declining Trend"
+      });
+    }
+
+    // 3. Improving Topics (Keep Momentum)
     const improvingTopics = topicPerf.filter((t) => t.learningState === "improving");
     for (const it of improvingTopics) {
       recommendations.push({
@@ -255,14 +290,14 @@ export class AdaptiveLearningService {
         recommendedDifficulty: it.recommendedDifficulty,
         estimatedMinutes: 12,
         actionType: "quiz",
-        bookId,
+        bookId: it.bookId || bookId,
         urgency: "Medium",
         badge: "Improving Trend"
       });
     }
 
-    // 3. Mastered Topics (Level Up Challenge)
-    const masteredTopics = topicPerf.filter((t) => t.learningState === "mastered");
+    // 4. Mastered Topics (Level Up Challenge)
+    const masteredTopics = topicPerf.filter((t) => t.learningState === "mastered" || t.learningState === "strong");
     for (const mt of masteredTopics) {
       recommendations.push({
         id: `rec-mst-${mt.topic.replace(/\s+/g, "_")}`,
@@ -273,9 +308,9 @@ export class AdaptiveLearningService {
         recommendedDifficulty: "Advanced",
         estimatedMinutes: 15,
         actionType: "quiz",
-        bookId,
+        bookId: mt.bookId || bookId,
         urgency: "Low",
-        badge: "Mastery Level Up"
+        badge: mt.learningState === "mastered" ? "Mastery Level Up" : "Strength Reinforcement"
       });
     }
 
@@ -367,17 +402,6 @@ export class AdaptiveLearningService {
           recommendedDifficulty
         });
       });
-    } else {
-      // Fallback learning path if document chunks are unpopulated
-      learningPath.push({
-        step: 1,
-        chapter: `${book.title} - Core Fundamentals`,
-        sectionsCount: 1,
-        pages: "1-10",
-        status: topicPerf.length > 0 ? "completed" : "in_progress",
-        action: topicPerf.length > 0 ? "Review Summary" : "Take Diagnostic Quiz",
-        recommendedDifficulty: "Intermediate"
-      });
     }
 
     return learningPath;
@@ -397,7 +421,8 @@ export class AdaptiveLearningService {
     }
 
     const topicPerformance = await this.getTopicPerformance(userId, bookId);
-    const weakTopics = topicPerformance.filter((t) => t.learningState === "needs_revision");
+    const weakTopics = topicPerformance.filter((t) => t.learningState === "needs_revision" || t.learningState === "declining");
+    const strongTopics = topicPerformance.filter((t) => t.learningState === "mastered" || t.learningState === "strong");
     const improvingTopics = topicPerformance.filter((t) => t.learningState === "improving");
     const masteredTopics = topicPerformance.filter((t) => t.learningState === "mastered");
     const recommendations = await this.generatePersonalizedRecommendations(userId, bookId);
@@ -415,11 +440,13 @@ export class AdaptiveLearningService {
       totalSummariesGenerated: progressAggregate.summaries_count,
       topicPerformance,
       weakTopics,
+      strongTopics,
       improvingTopics,
       masteredTopics,
       recommendations,
       recommendedDifficulty,
-      learningPath
+      learningPath,
+      insufficientHistory: topicPerformance.length === 0
     };
   }
 }
