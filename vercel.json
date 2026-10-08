@@ -2,6 +2,7 @@
   "buildCommand": "node build.js",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://nivas-sanjeevi-project1-1.onrender.com/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

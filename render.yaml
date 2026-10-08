@@ -15,5 +15,7 @@ services:
         generateValue: true
       - key: DB_TYPE
         value: sqlite
+      - key: FRONTEND_URL
+        value: https://nivas-sanjeevi-project1-pnb5.vercel.app
       - key: CORS_ORIGIN
-        value: "*"
+        value: https://nivas-sanjeevi-project1-pnb5.vercel.app

@@ -39,6 +39,12 @@ const parseCorsOrigins = () => {
       }
     });
   }
+  // Always include the production frontend in allowed origins
+  const productionFrontend = "https://nivas-sanjeevi-project1-pnb5.vercel.app";
+  if (!origins.includes(productionFrontend)) {
+    origins.push(productionFrontend);
+  }
+
   // Include standard development origin if not production
   if (NODE_ENV !== "production") {
     if (!origins.includes("http://localhost:5173")) origins.push("http://localhost:5173");
@@ -66,7 +72,7 @@ export const env = {
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || "",
   TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER || "",
   MSG91_AUTH_KEY: process.env.MSG91_AUTH_KEY || "",
-  FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:5173",
+  FRONTEND_URL: process.env.FRONTEND_URL || (NODE_ENV === "production" ? "https://nivas-sanjeevi-project1-pnb5.vercel.app" : "http://localhost:5173"),
   CORS_ORIGINS: parseCorsOrigins(),
   MAX_FILE_SIZE_MB: parseInt(process.env.MAX_FILE_SIZE_MB || "50", 10)
 };

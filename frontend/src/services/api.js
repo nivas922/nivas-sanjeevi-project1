@@ -1,7 +1,19 @@
 import { storageService } from "./storageService.js";
 import { SUPPORTED_LANGUAGES, DEPARTMENTS } from "../data/translations.js";
 
-const API_BASE_URL = import.meta.env?.VITE_API_URL || "/api";
+const resolveApiBaseUrl = () => {
+  const customUrl = import.meta.env?.VITE_API_URL;
+  if (customUrl && typeof customUrl === "string" && customUrl.trim()) {
+    const trimmed = customUrl.trim().replace(/\/+$/, "");
+    return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
+  }
+  if (import.meta.env?.PROD) {
+    return "https://nivas-sanjeevi-project1-1.onrender.com/api";
+  }
+  return "/api";
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const getAuthHeaders = () => {

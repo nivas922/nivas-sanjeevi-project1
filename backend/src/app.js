@@ -49,7 +49,7 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    if (env.CORS_ORIGINS.includes(origin)) {
+    if (env.CORS_ORIGINS.includes("*") || env.CORS_ORIGINS.includes(origin)) {
       return callback(null, true);
     }
 
