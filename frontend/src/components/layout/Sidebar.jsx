@@ -10,7 +10,6 @@ import {
   MessageSquareQuote,
   Sparkles,
   Settings,
-  LogOut,
   X,
   GraduationCap
 } from "lucide-react";
@@ -18,7 +17,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useLearning } from "../../context/LearningContext";
 
 export const Sidebar = ({ isOpen, onClose }) => {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { recommendations } = useLearning();
   const navigate = useNavigate();
 
@@ -38,11 +37,6 @@ export const Sidebar = ({ isOpen, onClose }) => {
     },
     { label: "Settings", path: "/settings", icon: Settings },
   ];
-
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
-  };
 
   return (
     <>
@@ -142,16 +136,6 @@ export const Sidebar = ({ isOpen, onClose }) => {
                 {user?.department || user?.role || "Student"}
               </p>
             </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleLogout();
-              }}
-              title="Logout"
-              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
           <button
             onClick={() => {

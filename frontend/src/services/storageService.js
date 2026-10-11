@@ -63,7 +63,7 @@ export const storageService = {
 
   getUser() {
     const stored = localStorage.getItem(STORAGE_KEYS.USER);
-    if (!stored) return null;
+    if (!stored) return this.initNewUser();
     return JSON.parse(stored);
   },
 
@@ -247,13 +247,7 @@ export const storageService = {
   getToken() {
     const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
     if (!token) return null;
-    // Discard any legacy fake/mock tokens or malformed non-JWT strings
-    if (
-      token.startsWith("mock_") ||
-      token.startsWith("jwt_token_") ||
-      token === "demo_google_id_token_12345" ||
-      token.split(".").length !== 3
-    ) {
+    if (token.startsWith("mock_jwt_") || token.startsWith("jwt_token_") || token.startsWith("demo_google_id_token")) {
       localStorage.removeItem(STORAGE_KEYS.TOKEN);
       return null;
     }
@@ -261,11 +255,10 @@ export const storageService = {
   },
 
   setToken(token) {
-    localStorage.setItem(STORAGE_KEYS.TOKEN, token);
+    if (token) localStorage.setItem(STORAGE_KEYS.TOKEN, token);
   },
 
   removeToken() {
     localStorage.removeItem(STORAGE_KEYS.TOKEN);
-    localStorage.removeItem(STORAGE_KEYS.USER);
   }
 };

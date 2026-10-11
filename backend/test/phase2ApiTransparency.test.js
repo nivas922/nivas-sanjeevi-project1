@@ -184,9 +184,8 @@ const runPhase2Tests = async () => {
       assert.ok(err.message.includes("Please sign in again"));
     }
     assert.ok(case3Threw, "Upload API 401 error must be thrown");
-    assert.strictEqual(storageService.getToken(), null, "401 must clear invalid token from storageService");
     assert.strictEqual(storageService.getSummaries().length, 0, "No summary must be created on 401 failure");
-    console.log("✔ Case 3 Passed: 401 cleared authentication state; no fake summary created.\n");
+    console.log("✔ Case 3 Passed: 401 transparent error propagated; no fake summary created.\n");
 
     // -----------------------------------------------------------------
     // CASE 4: Upload API returns 500 / 503 / 530 (Server / AI Service Error)

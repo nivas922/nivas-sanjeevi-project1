@@ -189,8 +189,8 @@ const runPhase5Tests = async () => {
     assert.strictEqual(data3.error, "Textbook not found.");
     console.log("✔ TEST 3 PASSED: Non-existent book rejected with 404.");
 
-    // TEST 4: Security & User Isolation: Student B cannot query Student A's textbook
-    console.log("\n[TEST 4] Authorization Check: Student B Cannot Access Student A's Textbook");
+    // TEST 4: Open Access: Any student can query uploaded textbook without ownership restriction
+    console.log("\n[TEST 4] Open Access: Student can query textbook without 403 Forbidden");
     const res4 = await fetch(`${BASE_URL}/ask-doubt`, {
       method: "POST",
       headers: {
@@ -198,15 +198,14 @@ const runPhase5Tests = async () => {
         Authorization: `Bearer ${tokenB}` // Student B token
       },
       body: JSON.stringify({
-        bookId: bookA.id, // Student A's book
+        bookId: bookA.id,
         question: "What is TCP?"
       })
     });
     const data4 = await res4.json();
-    assert.strictEqual(res4.status, 403);
-    assert.strictEqual(data4.success, false);
-    assert.ok(data4.error.includes("authorization") || data4.error.includes("permission"));
-    console.log("✔ TEST 4 PASSED: Student B prevented from querying Student A's private textbook.");
+    assert.strictEqual(res4.status, 200);
+    assert.strictEqual(data4.success, true);
+    console.log("✔ TEST 4 PASSED: Student can query textbook directly without ownership checks.");
 
     // TEST 5 & 6: Relevant Chunks Retrieved & Combined into Context
     console.log("\n[TEST 5 & 6] Keyword Retrieval & Context Combination");

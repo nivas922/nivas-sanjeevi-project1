@@ -7,11 +7,11 @@ import {
   Layers,
   Volume2,
   Bell,
-  LogOut,
   Save,
   Camera,
   Upload,
   Image as ImageIcon,
+  Sparkles,
   School
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -21,7 +21,7 @@ import { useToast } from "../context/ToastContext";
 import { SUPPORTED_LANGUAGES, DEPARTMENTS } from "../data/translations";
 
 export const Settings = () => {
-  const { user, updateProfile, logout } = useAuth();
+  const { user, updateProfile } = useAuth();
   const { activeLanguage, setActiveLanguage } = useLearning();
   const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
@@ -62,11 +62,11 @@ export const Settings = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleUseGoogleAvatar = () => {
-    const googleAvatar = `https://api.dicebear.com/7.x/bottts/svg?seed=google_${user?.name || "Student"}`;
-    setAvatarPreview(googleAvatar);
-    updateProfile({ avatar: googleAvatar });
-    showSuccess("Google Account avatar applied!");
+  const handleGenerateAvatar = () => {
+    const aiAvatar = `https://api.dicebear.com/7.x/bottts/svg?seed=ai_student_${Math.random().toString(36).substring(7)}`;
+    setAvatarPreview(aiAvatar);
+    updateProfile({ avatar: aiAvatar });
+    showSuccess("New AI Avatar generated!");
   };
 
   const handleSave = (e) => {
@@ -76,11 +76,6 @@ export const Settings = () => {
       avatar: avatarPreview
     });
     showSuccess("Settings & preferences successfully saved!");
-  };
-
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
   };
 
   return (
@@ -143,10 +138,10 @@ export const Settings = () => {
                   type="button"
                   size="sm"
                   variant="secondary"
-                  icon={ImageIcon}
-                  onClick={handleUseGoogleAvatar}
+                  icon={Sparkles}
+                  onClick={handleGenerateAvatar}
                 >
-                  Use Google Avatar
+                  Generate AI Avatar
                 </Button>
               </div>
               <p className="text-[11px] text-slate-400">
@@ -281,17 +276,7 @@ export const Settings = () => {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
-          <Button
-            type="button"
-            variant="danger"
-            size="md"
-            icon={LogOut}
-            onClick={handleLogout}
-          >
-            Sign Out
-          </Button>
-
+        <div className="flex items-center justify-end gap-4 pt-2">
           <Button
             type="submit"
             variant="primary"

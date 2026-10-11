@@ -1,5 +1,6 @@
 import { AiTutorService } from "../services/aiTutorService.js";
 import { ActivityLog } from "../models/ActivityLog.js";
+import { DEFAULT_USER_ID, resolveAuthUserId } from "../middleware/auth.js";
 
 export class DoubtController {
   // POST /ask-doubt
@@ -31,22 +32,22 @@ export class DoubtController {
         });
       }
 
+      const currentUserId = resolveAuthUserId(req) || DEFAULT_USER_ID;
+
       const result = await AiTutorService.answerDoubt({
         bookId: targetBookId,
         question: question.trim(),
-        userId: req.userId,
+        userId: currentUserId,
         targetLanguage: targetLang
       });
 
       // Log activity
-      if (req.userId) {
-        await ActivityLog.create({
-          user_id: req.userId,
-          activity_type: "doubt",
-          title: `Asked AI Tutor: ${question.trim().slice(0, 40)}`,
-          reference_id: targetBookId
-        });
-      }
+      await ActivityLog.create({
+        user_id: currentUserId,
+        activity_type: "doubt",
+        title: `Asked AI Tutor: ${question.trim().slice(0, 40)}`,
+        reference_id: targetBookId
+      });
 
       return res.status(200).json({
         success: true,

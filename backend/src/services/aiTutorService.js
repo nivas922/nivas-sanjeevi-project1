@@ -23,17 +23,11 @@ export class AiTutorService {
       throw err;
     }
 
-    // 1. Verify Book existence & Student authorization
+    // 1. Verify Book existence
     const book = await Book.findById(bookId);
     if (!book) {
       const err = new Error("Textbook not found.");
       err.statusCode = 404;
-      throw err;
-    }
-
-    if (book.user_id && (!userId || book.user_id !== userId)) {
-      const err = new Error("You do not have authorization to access this textbook.");
-      err.statusCode = 403;
       throw err;
     }
 

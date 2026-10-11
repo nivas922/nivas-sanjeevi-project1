@@ -5,6 +5,7 @@ import { DocumentChunk } from "../models/DocumentChunk.js";
 import { Progress } from "../models/Progress.js";
 import { ActivityLog } from "../models/ActivityLog.js";
 import { StorageService } from "../services/storageService.js";
+import { DEFAULT_USER_ID, resolveAuthUserId } from "../middleware/auth.js";
 
 export class BookController {
   // POST /upload-book
@@ -17,7 +18,7 @@ export class BookController {
         });
       }
 
-      const userId = req.userId;
+      const userId = resolveAuthUserId(req) || DEFAULT_USER_ID;
       const file = req.file;
       const fileUrl = StorageService.getFileUrl(file.filename);
 
@@ -106,7 +107,7 @@ export class BookController {
   // GET /books
   static async getUserBooks(req, res, next) {
     try {
-      const books = await Book.findByUserId(req.userId);
+      const books = await Book.findAll();
       return res.status(200).json({
         success: true,
         status: "success",
@@ -123,9 +124,6 @@ export class BookController {
       const book = await Book.findById(req.params.id);
       if (!book) {
         return res.status(404).json({ success: false, error: "Book not found." });
-      }
-      if (book.user_id && req.userId && book.user_id !== req.userId) {
-        return res.status(403).json({ success: false, error: "You do not have authorization to access this textbook." });
       }
       return res.status(200).json({
         success: true,
@@ -144,9 +142,6 @@ export class BookController {
       const book = await Book.findById(bookId);
       if (!book) {
         return res.status(404).json({ success: false, error: "Book not found." });
-      }
-      if (book.user_id && req.userId && book.user_id !== req.userId) {
-        return res.status(403).json({ success: false, error: "You do not have authorization to access this textbook's chunks." });
       }
       const chunks = await DocumentChunk.findByBookId(bookId);
       return res.status(200).json({

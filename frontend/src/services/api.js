@@ -17,10 +17,8 @@ const API_BASE_URL = resolveApiBaseUrl();
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const getAuthHeaders = () => {
-  const token = storageService.getToken();
   return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
+    "Content-Type": "application/json"
   };
 };
 
@@ -42,10 +40,9 @@ export const handleApiResponse = async (res) => {
 
   const backendMessage = errorData?.error || errorData?.message;
 
-  // 401 Unauthorized: clear authentication state immediately
+  // 401 Unauthorized
   if (res.status === 401) {
-    storageService.removeToken();
-    const err = new Error(backendMessage || "Your session has expired. Please sign in again.");
+    const err = new Error(backendMessage || "Unauthorized request.");
     err.status = 401;
     throw err;
   }
@@ -137,166 +134,9 @@ export const handleNetworkError = (err) => {
 };
 
 export const api = {
-  // 1. Google OAuth Verification Login
-  async loginWithGoogle(idToken, department) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/google`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id_token: idToken,
-          department
-        })
-      });
-      const data = await handleApiResponse(res);
-      storageService.setToken(data.token);
-      storageService.initNewUser(data.user);
-      return { status: "success", user: data.user, token: data.token, isNewUser: data.isNewUser };
-    } catch (err) {
-      handleNetworkError(err);
-    }
-  },
-
-  // 2. Mobile OTP: Send Verification Code
-  async sendMobileOtp(phoneNumber) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/mobile/send-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mobile: phoneNumber })
-      });
-      return await handleApiResponse(res);
-    } catch (err) {
-      handleNetworkError(err);
-    }
-  },
-
-  // 3. Mobile OTP: Verify and Establish Session
-  async loginWithMobile(phoneNumber, otp, department) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/mobile/verify-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mobile: phoneNumber,
-          otp,
-          department
-        })
-      });
-      const data = await handleApiResponse(res);
-      storageService.setToken(data.token);
-      storageService.initNewUser(data.user);
-      return { status: "success", user: data.user, token: data.token, isNewUser: data.isNewUser };
-    } catch (err) {
-      handleNetworkError(err);
-    }
-  },
-
-  // 4. Email Registration (Sends Verification OTP)
-  async register(userData) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/email/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: userData.name,
-          email: userData.email,
-          password: userData.password,
-          department: userData.department
-        })
-      });
-      return await handleApiResponse(res);
-    } catch (err) {
-      handleNetworkError(err);
-    }
-  },
-
-  // 5. Verify Email OTP & Complete Registration
-  async verifyEmailOtp(email, otp) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/email/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, otp })
-      });
-      const data = await handleApiResponse(res);
-      storageService.setToken(data.token);
-      storageService.initNewUser(data.user);
-      return { status: "success", user: data.user, token: data.token };
-    } catch (err) {
-      handleNetworkError(err);
-    }
-  },
-
-  // 6. Email & Password Login
-  async login(credentials) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/email/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: credentials.email,
-          password: credentials.password
-        })
-      });
-      const data = await handleApiResponse(res);
-      storageService.setToken(data.token);
-      storageService.initNewUser(data.user);
-      return { status: "success", user: data.user, token: data.token };
-    } catch (err) {
-      handleNetworkError(err);
-    }
-  },
-
-  // 7. Resend Email Verification OTP
-  async resendEmailOtp(email) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/email/resend-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
-      });
-      return await handleApiResponse(res);
-    } catch (err) {
-      handleNetworkError(err);
-    }
-  },
-
-  // 8. Forgot Password & Reset Password
-  async forgotPassword(email) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
-      });
-      return await handleApiResponse(res);
-    } catch (err) {
-      handleNetworkError(err);
-    }
-  },
-
-  async resetPassword({ email, otp, newPassword }) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, otp, newPassword })
-      });
-      return await handleApiResponse(res);
-    } catch (err) {
-      handleNetworkError(err);
-    }
-  },
-
   async getProfile() {
-    const token = storageService.getToken();
-    if (!token) {
-      return null;
-    }
-
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/me`, {
+      const res = await fetch(`${API_BASE_URL}/profile`, {
         headers: getAuthHeaders()
       });
       if (res.ok) {
@@ -305,9 +145,6 @@ export const api = {
           storageService.updateUser(data.user);
           return { status: "success", user: data.user };
         }
-      } else if (res.status === 401) {
-        storageService.removeToken();
-        return null;
       }
     } catch (err) {
       console.warn("Profile fetch notice:", err.message);
@@ -365,14 +202,11 @@ export const api = {
     formData.append("title", formattedTitle);
     formData.append("subject", metadata.subject || formattedTitle);
 
-    const token = storageService.getToken();
-
     // 1. Upload textbook to backend
     let uploadData;
     try {
       const uploadRes = await fetch(`${API_BASE_URL}/upload-book`, {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData
       });
       uploadData = await handleApiResponse(uploadRes);
@@ -501,12 +335,8 @@ export const api = {
         if (Array.isArray(data.quizzes)) {
           return data.quizzes;
         }
-      } else if (res.status === 401) {
-        storageService.removeToken();
-        throw new Error("Your session has expired. Please sign in again.");
       }
     } catch (err) {
-      if (err.status === 401) throw err;
       console.warn("Backend getQuizzes notice:", err.message);
     }
     return storageService.getQuizzes();
@@ -523,14 +353,10 @@ export const api = {
         if (data.quiz) {
           return data.quiz;
         }
-      } else if (res.status === 401) {
-        storageService.removeToken();
-        throw new Error("Your session has expired. Please sign in again.");
       } else if (res.status === 404) {
         return null;
       }
     } catch (err) {
-      if (err.status === 401) throw err;
       console.warn("Backend getQuizById notice:", err.message);
     }
     return storageService.getQuizzes().find((q) => q.id === id) || null;
@@ -546,12 +372,8 @@ export const api = {
         if (Array.isArray(data.summaries)) {
           return data.summaries;
         }
-      } else if (res.status === 401) {
-        storageService.removeToken();
-        throw new Error("Your session has expired. Please sign in again.");
       }
     } catch (err) {
-      if (err.status === 401) throw err;
       console.warn("Backend getSummaries notice:", err.message);
     }
     return storageService.getSummaries();
@@ -655,26 +477,20 @@ export const api = {
 
   async getRecommendations(bookId = null) {
     const user = storageService.getUser();
-    if (user && user.id) {
-      try {
-        const query = bookId ? `?bookId=${encodeURIComponent(bookId)}` : "";
-        const res = await fetch(`${API_BASE_URL}/recommendations/${user.id}${query}`, {
-          headers: getAuthHeaders()
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.recommendations)) {
-            return data.recommendations;
-          }
-        } else if (res.status === 401) {
-          storageService.removeToken();
-          throw new Error("Your session has expired. Please sign in again.");
+    const userId = user?.id || "usr_default";
+    try {
+      const query = bookId ? `?bookId=${encodeURIComponent(bookId)}` : "";
+      const res = await fetch(`${API_BASE_URL}/recommendations/${userId}${query}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.recommendations)) {
+          return data.recommendations;
         }
-      } catch (err) {
-        if (err.status === 401) throw err;
-        console.warn("Recommendations API notice:", err.message);
-        throw err;
       }
+    } catch (err) {
+      console.warn("Recommendations API notice:", err.message);
     }
     return [];
   },
@@ -687,14 +503,10 @@ export const api = {
       });
       if (res.ok) {
         return await res.json();
-      } else if (res.status === 401) {
-        storageService.removeToken();
-        throw new Error("Your session has expired. Please sign in again.");
       }
       const data = await res.json();
       throw new Error(data.error || "Failed to fetch adaptive learning data.");
     } catch (err) {
-      if (err.status === 401) throw err;
       console.warn("Adaptive learning API notice:", err.message);
       throw err;
     }

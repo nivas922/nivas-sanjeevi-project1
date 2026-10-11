@@ -246,6 +246,12 @@ export const initDb = async () => {
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_user_id ON activity_log(user_id);`);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_otp_identifier ON otp_verifications(identifier);`);
 
+  // Default guest/student user ensuring foreign key integrity without login
+  await dbRun(`
+    INSERT OR IGNORE INTO users (id, name, email, email_verified, login_method, role, preferred_language)
+    VALUES ('usr_default', 'Student', 'student@university.edu', 1, 'direct', 'Computer Science & Engineering (CSE)', 'en');
+  `);
+
   console.log(" Database schema initialized successfully with production indexes.");
 };
 

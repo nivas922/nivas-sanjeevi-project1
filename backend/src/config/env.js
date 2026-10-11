@@ -66,7 +66,6 @@ export const env = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
   GOOGLE_TRANSLATE_API_KEY: process.env.GOOGLE_TRANSLATE_API_KEY || "",
-  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
   OTP_PROVIDER: process.env.OTP_PROVIDER || "dev",
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || "",
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || "",

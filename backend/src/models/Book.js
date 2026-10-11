@@ -30,6 +30,11 @@ export class Book {
     return rows.map(this.format);
   }
 
+  static async findAll() {
+    const rows = await dbAll("SELECT * FROM books ORDER BY upload_date DESC");
+    return rows.map(this.format);
+  }
+
   static async findLatestByUserId(userId) {
     const row = await dbGet("SELECT * FROM books WHERE user_id = ? ORDER BY upload_date DESC LIMIT 1", [userId]);
     return this.format(row);

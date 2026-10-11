@@ -4,21 +4,33 @@ import { User } from "../models/User.js";
 import { Book } from "../models/Book.js";
 import { Quiz } from "../models/Quiz.js";
 import { AdaptiveLearningService } from "../services/adaptiveLearningService.js";
+import { DEFAULT_USER_ID, resolveAuthUserId } from "../middleware/auth.js";
 
 export class ProgressController {
-  // GET /progress/:user_id
+  // GET /progress & GET /progress/:user_id
   static async getProgress(req, res, next) {
     try {
-      const targetUserId = req.params.user_id || req.userId;
+      const authUserId = resolveAuthUserId(req);
+      const requestedUserId = req.params.user_id;
 
-      // Authorization check: prevent reading other user's progress
-      if (req.userId && targetUserId !== req.userId) {
-        return res.status(403).json({ success: false, error: "You do not have authorization to view this user's progress." });
+      let targetUserId;
+      if (!requestedUserId || requestedUserId === DEFAULT_USER_ID) {
+        targetUserId = authUserId || DEFAULT_USER_ID;
+      } else {
+        // A specific private user ID was requested.
+        // Prevent unauthorized snooping on private student records:
+        if (authUserId !== requestedUserId) {
+          return res.status(403).json({
+            success: false,
+            error: "Forbidden: Cannot access another student's private progress records."
+          });
+        }
+        targetUserId = requestedUserId;
       }
 
-      const user = await User.findById(targetUserId);
+      let user = await User.findById(targetUserId);
       if (!user) {
-        return res.status(404).json({ success: false, error: "User not found." });
+        user = await User.getDefaultUser();
       }
 
       const aggregate = await Progress.getAggregateForUser(targetUserId);
@@ -95,19 +107,28 @@ export class ProgressController {
     }
   }
 
-  // GET /activity/:user_id
+  // GET /activity & GET /activity/:user_id
   static async getActivity(req, res, next) {
     try {
-      const targetUserId = req.params.user_id || req.userId;
+      const authUserId = resolveAuthUserId(req);
+      const requestedUserId = req.params.user_id;
 
-      // Authorization check
-      if (req.userId && targetUserId !== req.userId) {
-        return res.status(403).json({ success: false, error: "You do not have authorization to view this user's activity log." });
+      let targetUserId;
+      if (!requestedUserId || requestedUserId === DEFAULT_USER_ID) {
+        targetUserId = authUserId || DEFAULT_USER_ID;
+      } else {
+        if (authUserId !== requestedUserId) {
+          return res.status(403).json({
+            success: false,
+            error: "Forbidden: Cannot access another student's private activity log."
+          });
+        }
+        targetUserId = requestedUserId;
       }
 
-      const user = await User.findById(targetUserId);
+      let user = await User.findById(targetUserId);
       if (!user) {
-        return res.status(404).json({ success: false, error: "User not found." });
+        user = await User.getDefaultUser();
       }
 
       const activities = await ActivityLog.findByUserId(targetUserId, 20);
@@ -126,16 +147,14 @@ export class ProgressController {
   // GET /adaptive-learning/:bookId or GET /adaptive-learning
   static async getAdaptiveLearning(req, res, next) {
     try {
-      const targetUserId = req.userId;
+      const authUserId = resolveAuthUserId(req);
+      const targetUserId = authUserId || DEFAULT_USER_ID;
       const bookId = req.params.bookId || req.query.book_id || req.query.bookId || null;
 
       if (bookId) {
         const book = await Book.findById(bookId);
         if (!book) {
           return res.status(404).json({ success: false, error: "Textbook not found." });
-        }
-        if (book.user_id && book.user_id !== targetUserId) {
-          return res.status(403).json({ success: false, error: "You do not have authorization to access adaptive learning for this textbook." });
         }
       }
 

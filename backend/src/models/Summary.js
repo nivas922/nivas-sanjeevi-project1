@@ -57,6 +57,11 @@ export class Summary {
     return rows.map(this.format);
   }
 
+  static async findAll() {
+    const rows = await dbAll("SELECT * FROM summaries ORDER BY created_at DESC");
+    return rows.map(this.format);
+  }
+
   static async create({
     id = uuidv4(),
     book_id,

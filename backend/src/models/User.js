@@ -181,4 +181,17 @@ export class User {
     }
     return this.findById(id);
   }
+
+  static async getDefaultUser() {
+    let user = await this.findById("usr_default");
+    if (!user) {
+      await dbRun(`
+        INSERT OR IGNORE INTO users (id, name, email, email_verified, login_method, role, preferred_language)
+        VALUES ('usr_default', 'Student', 'student@university.edu', 1, 'direct', 'Computer Science & Engineering (CSE)', 'en');
+      `);
+      user = await this.findById("usr_default");
+    }
+    return user;
+  }
 }
+

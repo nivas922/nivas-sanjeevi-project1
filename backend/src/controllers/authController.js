@@ -210,15 +210,12 @@ export class AuthController {
     }
   }
 
-  // GET /auth/me (Protected)
+  // GET /auth/me
   static async getMe(req, res, next) {
     try {
-      const user = await User.findById(req.userId);
+      let user = req.user || (req.userId ? await User.findById(req.userId) : null);
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          error: "User not found."
-        });
+        user = await User.getDefaultUser();
       }
       return res.status(200).json({
         success: true,

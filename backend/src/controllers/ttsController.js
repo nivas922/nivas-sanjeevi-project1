@@ -1,5 +1,6 @@
 import { TtsService } from "../services/ttsService.js";
 import { isLanguageSupported, SUPPORTED_LANGUAGES } from "../config/languageConfig.js";
+import { resolveAuthUser } from "../middleware/auth.js";
 
 export class TtsController {
   // POST /text-to-speech
@@ -17,7 +18,8 @@ export class TtsController {
           error: `Unsupported language: '${req.body.language}'. Supported languages: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}.`
         });
       }
-      const language = req.body.language || req.user?.preferred_language || "en";
+      const currentUser = await resolveAuthUser(req);
+      const language = req.body.language || currentUser?.preferred_language || "en";
 
       const result = await TtsService.synthesizeSpeech({
         text: text.trim(),

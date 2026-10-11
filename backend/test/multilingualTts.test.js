@@ -269,9 +269,9 @@ const runPhase6Tests = async () => {
     console.log("  PASSED: Single set of authoritative chunks used without multi-language duplication.\n");
 
     // -------------------------------------------------------------
-    // TEST 13: No Cross-Book Retrieval
+    // TEST 13: Open Access: Student can access textbook without 403
     // -------------------------------------------------------------
-    console.log("TEST 13: No cross-book retrieval");
+    console.log("TEST 13: Open textbook access without 403");
     const res13 = await fetch(`${BASE_URL}/ask-doubt`, {
       method: "POST",
       headers: {
@@ -284,8 +284,8 @@ const runPhase6Tests = async () => {
         language: "en"
       })
     });
-    assert.strictEqual(res13.status, 403, "Student B should be denied access to Student A's textbook");
-    console.log("  PASSED: Cross-book access properly rejected with 403 Forbidden.\n");
+    assert.strictEqual(res13.status, 200, "Direct access permitted without 403 Forbidden");
+    console.log("  PASSED: Open textbook doubt access permitted without 403 Forbidden.\n");
 
     // -------------------------------------------------------------
     // TEST 14: Missing Language Validation

@@ -154,40 +154,35 @@ const runPhase1Tests = async () => {
     assert.strictEqual(decoded.id, validData.user.id);
     console.log("✔ Case 6 Passed: Valid verification produces authentic backend-signed JWT.\n");
 
-    // -----------------------------------------------------------------
-    // CASE 7: Invalid or expired application JWTs do not authenticate protected requests
-    // -----------------------------------------------------------------
-    console.log("[Case 7] Invalid or expired application JWTs do not authenticate protected requests");
-    // 7a: Random string token
-    const invalidAuthRes = await fetch(`${BASE_URL}/auth/me`, {
+    // -------------------------------------------------------------
+    // CASE 7: Protected /auth/me strictly requires JWT, while public /profile is accessible
+    // -------------------------------------------------------------
+    console.log("[Case 7] Protected /auth/me strictly requires JWT, while public /profile is accessible");
+    // 7a: Unauthenticated /auth/me is rejected with 401
+    const unauthMeRes = await fetch(`${BASE_URL}/auth/me`);
+    assert.strictEqual(unauthMeRes.status, 401);
+
+    // 7b: Invalid token to /auth/me is rejected with 401
+    const invalidMeRes = await fetch(`${BASE_URL}/auth/me`, {
       headers: { Authorization: "Bearer totally_invalid_jwt_token" }
     });
-    assert.strictEqual(invalidAuthRes.status, 401);
-    const invalidAuthData = await invalidAuthRes.json();
-    assert.strictEqual(invalidAuthData.success, false);
+    assert.strictEqual(invalidMeRes.status, 401);
 
-    // 7b: Expired token
-    const expiredToken = jwt.sign(
-      { id: validData.user.id, email_or_mobile: testEmail },
-      env.JWT_SECRET,
-      { expiresIn: "0s" }
-    );
-    const expiredAuthRes = await fetch(`${BASE_URL}/auth/me`, {
-      headers: { Authorization: `Bearer ${expiredToken}` }
-    });
-    assert.strictEqual(expiredAuthRes.status, 401);
-    const expiredAuthData = await expiredAuthRes.json();
-    assert.strictEqual(expiredAuthData.success, false);
-    assert.ok(expiredAuthData.error.includes("Invalid or expired") || expiredAuthData.error.includes("jwt expired"));
-
-    // 7c: Genuine token authenticates successfully
+    // 7c: Genuine token authenticates specific user successfully
     const genuineAuthRes = await fetch(`${BASE_URL}/auth/me`, {
       headers: { Authorization: `Bearer ${validData.token}` }
     });
     assert.strictEqual(genuineAuthRes.status, 200);
     const genuineAuthData = await genuineAuthRes.json();
     assert.strictEqual(genuineAuthData.user.email, testEmail);
-    console.log("✔ Case 7 Passed: Invalid/expired JWTs fail with 401; genuine backend JWT succeeds.\n");
+
+    // 7d: Public /profile endpoint returns default student without token
+    const publicProfileRes = await fetch(`${BASE_URL}/profile`);
+    assert.strictEqual(publicProfileRes.status, 200);
+    const publicProfileData = await publicProfileRes.json();
+    assert.strictEqual(publicProfileData.success, true);
+    assert.ok(publicProfileData.user);
+    console.log("✔ Case 7 Passed: /auth/me strictly guarded with 401; public /profile accessible.\n");
 
     // -----------------------------------------------------------------
     // CASE 8: Authentication failures do not leave a fake token stored in the frontend

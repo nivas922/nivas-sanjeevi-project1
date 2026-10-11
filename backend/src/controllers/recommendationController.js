@@ -1,42 +1,35 @@
 import { AdaptiveLearningService } from "../services/adaptiveLearningService.js";
 import { Book } from "../models/Book.js";
 import { User } from "../models/User.js";
+import { DEFAULT_USER_ID, resolveAuthUserId } from "../middleware/auth.js";
 
 export class RecommendationController {
   // GET /recommendations or GET /recommendations/:user_id
   static async getRecommendations(req, res, next) {
     try {
-      const targetUserId = req.params.user_id || req.userId;
+      const authUserId = resolveAuthUserId(req);
+      const requestedUserId = req.params.user_id;
+
+      let targetUserId;
+      if (!requestedUserId || requestedUserId === DEFAULT_USER_ID) {
+        targetUserId = authUserId || DEFAULT_USER_ID;
+      } else {
+        if (authUserId !== requestedUserId) {
+          return res.status(403).json({
+            success: false,
+            error: "Forbidden: Cannot access another student's private recommendations."
+          });
+        }
+        targetUserId = requestedUserId;
+      }
+
       const bookId = req.query.book_id || req.query.bookId || null;
-
-      // Authorization check: User can only view their own recommendations
-      if (req.userId && targetUserId !== req.userId) {
-        return res.status(403).json({
-          success: false,
-          error: "You do not have authorization to view this user's recommendations."
-        });
-      }
-
-      const user = await User.findById(targetUserId);
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          error: "User not found."
-        });
-      }
-
       if (bookId) {
         const book = await Book.findById(bookId);
         if (!book) {
           return res.status(404).json({
             success: false,
             error: "Textbook not found."
-          });
-        }
-        if (book.user_id && book.user_id !== req.userId) {
-          return res.status(403).json({
-            success: false,
-            error: "You do not have authorization to view recommendations for this textbook."
           });
         }
       }

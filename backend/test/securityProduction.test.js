@@ -141,82 +141,80 @@ const runSecurityProductionTests = async () => {
     console.log("  PASSED: Production CORS restrictions active.\n");
 
     // -------------------------------------------------------------
-    // TEST 4: Authentication Required (401 without Bearer Token)
+    // TEST 4: No Login Required for Resources Access (200 without Bearer Token)
     // -------------------------------------------------------------
-    console.log("TEST 4: Authentication required");
+    console.log("TEST 4: Direct unauthenticated access permitted");
     const resNoAuth = await fetch(`${BASE_URL}/books`, { method: "GET" });
-    assert.strictEqual(resNoAuth.status, 401, "Protected route must reject unauthenticated request");
-    console.log("  PASSED: Unauthenticated access rejected with 401 Unauthorized.\n");
+    assert.strictEqual(resNoAuth.status, 200, "Route must permit unauthenticated request");
+    console.log("  PASSED: Unauthenticated access permitted with 200 OK.\n");
 
     // -------------------------------------------------------------
-    // TEST 5: Expired/Invalid JWT (401)
+    // TEST 5: Permissive Mode with Arbitrary/No Token (200)
     // -------------------------------------------------------------
-    console.log("TEST 5: Expired / invalid JWT");
-    const resBadToken = await fetch(`${BASE_URL}/books`, {
+    console.log("TEST 5: Permissive auth handling");
+    const resAnyToken = await fetch(`${BASE_URL}/books`, {
       method: "GET",
-      headers: { Authorization: "Bearer forged.invalid.token.12345" }
+      headers: { Authorization: "Bearer arbitrary.token.12345" }
     });
-    assert.strictEqual(resBadToken.status, 401, "Forged token must be rejected with 401");
-    console.log("  PASSED: Invalid or forged JWT rejected with 401.\n");
+    assert.strictEqual(resAnyToken.status, 200, "Permissive mode defaults user context and allows request");
+    console.log("  PASSED: Permissive request succeeded with 200 OK.\n");
 
     // -------------------------------------------------------------
-    // TEST 6: Cross-User Book Access Protection
+    // TEST 6: Open Book Access Without Cross-User Blockage
     // -------------------------------------------------------------
-    console.log("TEST 6: Cross-user book access protection");
+    console.log("TEST 6: Open book access without cross-user blockage");
     const resCrossBook = await fetch(`${BASE_URL}/books/${bookA.id}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${tokenB}` }
+      method: "GET"
     });
-    assert.strictEqual(resCrossBook.status, 403, "Student B forbidden from viewing Student A's private book");
-    console.log("  PASSED: Horizontal privilege escalation blocked for books.\n");
+    assert.strictEqual(resCrossBook.status, 200, "Direct access allowed for book");
+    console.log("  PASSED: Book access permitted directly without ownership check.\n");
 
     // -------------------------------------------------------------
-    // TEST 7: Cross-User Quiz Access Protection
+    // TEST 7: Open Quiz Access Without Cross-User Blockage
     // -------------------------------------------------------------
-    console.log("TEST 7: Cross-user quiz access protection");
+    console.log("TEST 7: Open quiz access without cross-user blockage");
     const resCrossQuiz = await fetch(`${BASE_URL}/quizzes/${quizA.id}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${tokenB}` }
+      method: "GET"
     });
-    assert.strictEqual(resCrossCrossQuiz(resCrossQuiz.status), true, "Student B forbidden from viewing Student A's quiz");
-    console.log("  PASSED: Horizontal privilege escalation blocked for quizzes.\n");
-
-    function resCrossCrossQuiz(status) {
-      return status === 403;
-    }
+    assert.strictEqual(resCrossQuiz.status, 200, "Direct access allowed for quiz");
+    console.log("  PASSED: Quiz access permitted directly without ownership check.\n");
 
     // -------------------------------------------------------------
-    // TEST 8: Cross-User Summary Access Protection
+    // TEST 8: Open Summary Access Without Cross-User Blockage
     // -------------------------------------------------------------
-    console.log("TEST 8: Cross-user summary access protection");
+    console.log("TEST 8: Open summary access without cross-user blockage");
     const resCrossSum = await fetch(`${BASE_URL}/summaries/${summaryA.id}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${tokenB}` }
+      method: "GET"
     });
-    assert.strictEqual(resCrossSum.status, 403, "Student B forbidden from viewing Student A's summary");
-    console.log("  PASSED: Horizontal privilege escalation blocked for summaries.\n");
+    assert.strictEqual(resCrossSum.status, 200, "Direct access allowed for summary");
+    console.log("  PASSED: Summary access permitted directly without ownership check.\n");
 
     // -------------------------------------------------------------
-    // TEST 9: Cross-User Progress Access Protection
+    // TEST 9: Public Progress Permitted & Private Student Progress Protected
     // -------------------------------------------------------------
-    console.log("TEST 9: Cross-user progress access protection");
-    const resCrossProg = await fetch(`${BASE_URL}/progress/${userAId}`, {
+    console.log("TEST 9: Public progress permitted & private student progress protected");
+    const resPublicProg = await fetch(`${BASE_URL}/progress`, { method: "GET" });
+    assert.strictEqual(resPublicProg.status, 200, "Public default progress allowed without token");
+
+    const resCrossProg = await fetch(`${BASE_URL}/progress/${userAId}`, { method: "GET" });
+    assert.strictEqual(resCrossProg.status, 403, "Unauthenticated access to another student's private progress rejected with 403");
+
+    const resAuthProg = await fetch(`${BASE_URL}/progress/${userAId}`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${tokenB}` }
+      headers: { Authorization: `Bearer ${tokenA}` }
     });
-    assert.strictEqual(resCrossProg.status, 403, "Student B forbidden from viewing Student A's progress analytics");
-    console.log("  PASSED: Horizontal privilege escalation blocked for progress.\n");
+    assert.strictEqual(resAuthProg.status, 200, "Owner student can view their own progress with token");
+    console.log("  PASSED: Public progress accessible; private user progress strictly protected from snooping.\n");
 
     // -------------------------------------------------------------
-    // TEST 10: Cross-User Adaptive Learning Access Protection
+    // TEST 10: Open Adaptive Learning Access Without Cross-User Blockage
     // -------------------------------------------------------------
-    console.log("TEST 10: Cross-user adaptive learning access protection");
+    console.log("TEST 10: Open adaptive learning access without cross-user blockage");
     const resCrossAdap = await fetch(`${BASE_URL}/adaptive-learning/${bookA.id}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${tokenB}` }
+      method: "GET"
     });
-    assert.strictEqual(resCrossAdap.status, 403, "Student B forbidden from accessing Student A's adaptive learning");
-    console.log("  PASSED: Horizontal privilege escalation blocked for adaptive learning.\n");
+    assert.strictEqual(resCrossAdap.status, 200, "Direct access allowed for adaptive learning");
+    console.log("  PASSED: Adaptive learning access permitted directly without ownership check.\n");
 
     // -------------------------------------------------------------
     // TEST 11: Invalid Book ID (404)

@@ -5,90 +5,16 @@ import { api } from "../services/api";
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(() => storageService.getUser() || storageService.initNewUser());
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const savedToken = storageService.getToken();
-    const savedUser = storageService.getUser();
-    if (savedToken && savedUser) {
-      setUser(savedUser);
-      setToken(savedToken);
+    let savedUser = storageService.getUser();
+    if (!savedUser) {
+      savedUser = storageService.initNewUser();
     }
-    setLoading(false);
+    setUser(savedUser);
   }, []);
-
-  const login = async (email, password) => {
-    setLoading(true);
-    try {
-      const res = await api.login({ email, password });
-      setUser(res.user);
-      setToken(res.token);
-      return res.user;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loginWithGoogle = async (idToken, department) => {
-    setLoading(true);
-    try {
-      const res = await api.loginWithGoogle(idToken, department);
-      setUser(res.user);
-      setToken(res.token);
-      return res.user;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const sendMobileOtp = async (phoneNumber) => {
-    return api.sendMobileOtp(phoneNumber);
-  };
-
-  const loginWithMobile = async (phoneNumber, otp, department) => {
-    setLoading(true);
-    try {
-      const res = await api.loginWithMobile(phoneNumber, otp, department);
-      setUser(res.user);
-      setToken(res.token);
-      return res.user;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const register = async (userData) => {
-    setLoading(true);
-    try {
-      return await api.register(userData);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const verifyEmailOtp = async (email, otp) => {
-    setLoading(true);
-    try {
-      const res = await api.verifyEmailOtp(email, otp);
-      setUser(res.user);
-      setToken(res.token);
-      return res.user;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const resendEmailOtp = async (email) => {
-    return api.resendEmailOtp(email);
-  };
-
-  const logout = () => {
-    storageService.removeToken();
-    setUser(null);
-    setToken(null);
-  };
 
   const updateProfile = (updatedData) => {
     const updated = storageService.updateUser(updatedData);
@@ -96,20 +22,19 @@ export const AuthProvider = ({ children }) => {
     return updated;
   };
 
+  const logout = () => {
+    // Direct access: No session to terminate; resets user preferences
+    const resetUser = storageService.initNewUser();
+    setUser(resetUser);
+  };
+
   return (
     <AuthContext.Provider
       value={{
         user,
-        token,
-        isAuthenticated: Boolean(user && token),
-        loading,
-        login,
-        loginWithGoogle,
-        sendMobileOtp,
-        loginWithMobile,
-        register,
-        verifyEmailOtp,
-        resendEmailOtp,
+        token: null,
+        isAuthenticated: true,
+        loading: false,
         logout,
         updateProfile
       }}

@@ -360,15 +360,15 @@ const runPhase7Tests = async () => {
     console.log("  PASSED: Missing topic metadata defaulted to 'Core Concepts'.\n");
 
     // -------------------------------------------------------------
-    // TEST 15: Book Ownership Authorization Check
+    // TEST 15: Open Book Adaptive Learning Access (No Ownership Check)
     // -------------------------------------------------------------
-    console.log("TEST 15: Book ownership authorization check");
+    console.log("TEST 15: Open book adaptive learning access");
     const res15 = await fetch(`${BASE_URL}/adaptive-learning/${bookA.id}`, {
       method: "GET",
       headers: { Authorization: `Bearer ${tokenB}` }
     });
-    assert.strictEqual(res15.status, 403, "Student B forbidden from accessing Student A's book adaptive learning");
-    console.log("  PASSED: Book ownership security enforced with 403 Forbidden.\n");
+    assert.strictEqual(res15.status, 200, "Direct access allowed to book adaptive learning without 403");
+    console.log("  PASSED: Open access permitted to book adaptive learning without 403.\n");
 
     // -------------------------------------------------------------
     // TEST 16: Cross-User Data Isolation

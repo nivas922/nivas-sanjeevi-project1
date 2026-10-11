@@ -38,6 +38,11 @@ export class Quiz {
     return rows.map(this.format);
   }
 
+  static async findAll() {
+    const rows = await dbAll("SELECT * FROM quizzes ORDER BY taken_at DESC");
+    return rows.map(this.format);
+  }
+
   static async create({ id = uuidv4(), book_id = null, user_id, num_questions, questions }) {
     await dbRun(
       `INSERT INTO quizzes (id, book_id, user_id, num_questions, questions, total_questions)

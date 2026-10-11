@@ -347,18 +347,25 @@ const runTests = async () => {
     assert.ok(recData.recommendations.length > 0);
     console.log(`✔ GET /recommendations returned personalized learning recommendations: '${recData.recommendations[0].topic}'`);
 
-    // Test 13: Security & Validation Tests
-    console.log("\n[Test 13] Security & Input Validation Tests");
-    const unauthRes = await fetch(`${BASE_URL}/summarize`, {
+    // Test 13: Direct Unauthenticated Access & Validation Tests
+    console.log("\n[Test 13] Direct Unauthenticated Access & Input Validation Tests");
+    const directAccessRes = await fetch(`${BASE_URL}/summarize`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer invalid_token_12345"
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({ book_id: "nonexistent" })
     });
-    assert.strictEqual(unauthRes.status, 401);
-    console.log("✔ Reject unauthorized request with 401");
+    assert.strictEqual(directAccessRes.status, 404);
+    console.log("✔ Direct unauthenticated access to /summarize proceeds without 401 (returns 404 for nonexistent book)");
+
+    const invalidInputRes = await fetch(`${BASE_URL}/summarize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    assert.strictEqual(invalidInputRes.status, 400);
+    console.log("✔ Reject missing book_id with 400 validation error");
 
     const invalidMobileRes = await fetch(`${BASE_URL}/auth/mobile/send-otp`, {
       method: "POST",
