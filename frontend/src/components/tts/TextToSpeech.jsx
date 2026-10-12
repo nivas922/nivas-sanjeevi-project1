@@ -7,7 +7,10 @@ import {
   Volume2,
   Languages,
   Gauge,
-  Sparkles
+  Sparkles,
+  Info,
+  CheckCircle2,
+  AlertTriangle
 } from "lucide-react";
 import { speechService } from "../../services/speechService";
 import { useToast } from "../../context/ToastContext";
@@ -21,42 +24,63 @@ export const TextToSpeech = ({
   compact = false,
   className = ""
 }) => {
-  const { showWarning } = useToast();
+  const { showWarning, showError } = useToast();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [rate, setRate] = useState(1.0);
   const [selectedLang, setSelectedLang] = useState(initialLang || "en");
   const [allGroupedVoices, setAllGroupedVoices] = useState([]);
   const [selectedVoiceName, setSelectedVoiceName] = useState("");
+  const [playbackMode, setPlaybackMode] = useState(null);
+  const [playbackVoiceLabel, setPlaybackVoiceLabel] = useState("");
 
   const speedOptions = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
+  // Stop playback when parent text changes so next play reads the latest text
+  useEffect(() => {
+    speechService.stop();
+    setIsPlaying(false);
+    setIsPaused(false);
+    setPlaybackMode(null);
+  }, [text]);
 
   // React to initialLang changes from parent
   useEffect(() => {
     if (initialLang) {
+      speechService.stop();
+      setIsPlaying(false);
+      setIsPaused(false);
+      setPlaybackMode(null);
       setSelectedLang(initialLang);
     }
   }, [initialLang]);
 
-  // Load all grouped voice profiles across all 7 languages
+  // Load and listen for voice profile changes from the browser
   useEffect(() => {
     const updateVoices = () => {
       const grouped = speechService.getAllGroupedVoices();
       setAllGroupedVoices(grouped);
 
-      // Default voice for the active language
-      const targetGroup = grouped.find(g => g.langCode === selectedLang) || grouped[0];
+      const targetGroup = grouped.find((g) => g.langCode === selectedLang);
       if (targetGroup && targetGroup.voices.length > 0) {
-        setSelectedVoiceName(targetGroup.voices[0].name);
+        // If current selected voice is not in the new language, default to first available
+        const currentValid = targetGroup.voices.some((v) => v.name === selectedVoiceName);
+        if (!currentValid) {
+          setSelectedVoiceName(targetGroup.voices[0].name);
+        }
+      } else {
+        setSelectedVoiceName("");
       }
     };
 
     updateVoices();
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.onvoiceschanged = updateVoices;
-    }
+
+    const unsubscribe = speechService.onVoicesChanged(() => {
+      updateVoices();
+    });
 
     return () => {
+      unsubscribe();
       speechService.stop();
     };
   }, [selectedLang]);
@@ -67,7 +91,7 @@ export const TextToSpeech = ({
 
     // Find which language group this voice belongs to
     for (const group of allGroupedVoices) {
-      const match = group.voices.find(v => v.name === chosenName);
+      const match = group.voices.find((v) => v.name === chosenName);
       if (match) {
         setSelectedLang(match.langCode || group.langCode);
         break;
@@ -76,12 +100,24 @@ export const TextToSpeech = ({
   };
 
   const handleLanguageTabClick = (langCode) => {
+    speechService.stop();
+    setIsPlaying(false);
+    setIsPaused(false);
+    setPlaybackMode(null);
     setSelectedLang(langCode);
-    const targetGroup = allGroupedVoices.find(g => g.langCode === langCode);
+
+    const targetGroup = allGroupedVoices.find((g) => g.langCode === langCode);
     if (targetGroup && targetGroup.voices.length > 0) {
       setSelectedVoiceName(targetGroup.voices[0].name);
+    } else {
+      setSelectedVoiceName("");
     }
   };
+
+  const currentLangObj =
+    SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang) || SUPPORTED_LANGUAGES[0];
+  const bcp47 = speechService.getBcp47Code(selectedLang);
+  const hasBrowserVoice = speechService.hasVoiceForLanguage(selectedLang);
 
   const handlePlay = () => {
     if (!text || text.trim() === "") {
@@ -101,9 +137,11 @@ export const TextToSpeech = ({
       lang: selectedLang,
       rate,
       voiceName: selectedVoiceName,
-      onStart: () => {
+      onStart: (info) => {
         setIsPlaying(true);
         setIsPaused(false);
+        setPlaybackMode(info?.mode || "browser");
+        setPlaybackVoiceLabel(info?.voice || "");
       },
       onPause: () => {
         setIsPaused(true);
@@ -116,10 +154,19 @@ export const TextToSpeech = ({
       onEnd: () => {
         setIsPlaying(false);
         setIsPaused(false);
+        setPlaybackMode(null);
       },
-      onError: () => {
+      onError: (err) => {
         setIsPlaying(false);
         setIsPaused(false);
+        setPlaybackMode(null);
+        if (err?.code === "VOICE_UNAVAILABLE") {
+          showError(
+            `A voice for ${currentLangObj.name} (${bcp47}) is not installed on this system. Audio cannot be played using an English voice. Please install the ${currentLangObj.name} language and speech pack in Windows Settings.`
+          );
+        } else {
+          showError(err?.message || "Audio playback error occurred.");
+        }
       }
     });
   };
@@ -134,31 +181,35 @@ export const TextToSpeech = ({
     speechService.stop();
     setIsPlaying(false);
     setIsPaused(false);
+    setPlaybackMode(null);
   };
 
   const handleReset = () => {
     speechService.stop();
     setIsPlaying(false);
     setIsPaused(false);
+    setPlaybackMode(null);
     setRate(1.0);
   };
 
-  const currentLangObj = SUPPORTED_LANGUAGES.find(l => l.code === selectedLang) || SUPPORTED_LANGUAGES[0];
-
   if (compact) {
     return (
-      <div className={`inline-flex items-center gap-1.5 p-1 rounded-xl bg-slate-100/90 border border-slate-200 shadow-soft-sm ${className}`}>
+      <div
+        className={`inline-flex items-center gap-1.5 p-1 rounded-xl bg-slate-100/90 border border-slate-200 shadow-soft-sm ${className}`}
+      >
         {!isPlaying ? (
           <button
+            type="button"
             onClick={handlePlay}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-all shadow-soft-sm cursor-pointer"
-            title="Listen to audio"
+            title={`Listen in ${currentLangObj.name} (${bcp47})`}
           >
             <Play className="w-3.5 h-3.5 fill-current" />
             <span>Listen ({currentLangObj.name})</span>
           </button>
         ) : (
           <button
+            type="button"
             onClick={handlePause}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all shadow-soft-sm cursor-pointer"
             title="Pause audio"
@@ -170,6 +221,7 @@ export const TextToSpeech = ({
 
         {(isPlaying || isPaused) && (
           <button
+            type="button"
             onClick={handleStop}
             className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
             title="Stop audio"
@@ -183,8 +235,10 @@ export const TextToSpeech = ({
           onChange={(e) => setRate(parseFloat(e.target.value))}
           className="text-[11px] font-bold bg-white text-slate-700 py-1 px-2 rounded-lg border border-slate-200 focus:outline-none"
         >
-          {speedOptions.map(s => (
-            <option key={s} value={s}>{s}x</option>
+          {speedOptions.map((s) => (
+            <option key={s} value={s}>
+              {s}x
+            </option>
           ))}
         </select>
       </div>
@@ -192,7 +246,9 @@ export const TextToSpeech = ({
   }
 
   return (
-    <div className={`bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-soft-sm space-y-4 ${className}`}>
+    <div
+      className={`bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-soft-sm space-y-4 ${className}`}
+    >
       {/* Header with Title and Playback Status */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2.5">
@@ -201,10 +257,13 @@ export const TextToSpeech = ({
           </div>
           <div>
             <h4 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
-              <span>{title || `Audio Speech Narration: ${currentLangObj.name} (${currentLangObj.native})`}</span>
+              <span>
+                {title ||
+                  `Audio Speech Narration: ${currentLangObj.name} (${currentLangObj.native})`}
+              </span>
             </h4>
             <p className="text-xs text-slate-500 font-medium">
-              Multilingual Indian speech synthesizer tailored for {currentLangObj.name}
+              Multilingual Indian speech synthesizer tailored for {currentLangObj.name} ({bcp47})
             </p>
           </div>
         </div>
@@ -214,7 +273,9 @@ export const TextToSpeech = ({
           {isPlaying && (
             <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shadow-soft-xs animate-pulse">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-              🔊 Reading Aloud in {currentLangObj.name}
+              {playbackMode === "backend"
+                ? `🔊 Reading Aloud via Cloud Audio (${currentLangObj.name} - ${bcp47})`
+                : `🔊 Reading Aloud in ${currentLangObj.name} (${playbackVoiceLabel || bcp47})`}
             </span>
           )}
           {isPaused && (
@@ -224,11 +285,51 @@ export const TextToSpeech = ({
           )}
           {!isPlaying && !isPaused && (
             <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-              ⏹ Ready to Play
+              {hasBrowserVoice ? (
+                <span>⏹ Ready to Play ({bcp47})</span>
+              ) : (
+                <span>☁️ Cloud Audio Ready ({bcp47})</span>
+              )}
             </span>
           )}
         </div>
       </div>
+
+      {/* Voice Availability Warning Notice (Requirement 5) */}
+      {!hasBrowserVoice && (
+        <div className="rounded-2xl bg-amber-50/90 border border-amber-200/90 p-4 space-y-2 text-xs text-amber-900">
+          <div className="flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1.5 w-full">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-amber-900">
+                  Notice: Browser voice for {currentLangObj.name} ({bcp47}) is not locally installed
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-300">
+                  Cloud TTS Active
+                </span>
+              </div>
+              <p className="text-amber-800 leading-relaxed font-medium">
+                Your browser or operating system does not have a local {currentLangObj.name} Text-to-Speech voice installed. To prevent incorrect English voice playback, audio will narrate using authentic {currentLangObj.name} ({bcp47}) Cloud Speech.
+              </p>
+              <div className="pt-1 text-[11px] text-amber-800/90 space-y-0.5 bg-amber-100/60 p-2.5 rounded-xl border border-amber-200/60">
+                <p className="font-bold text-amber-900">
+                  How to install the local {currentLangObj.name} voice pack on Windows:
+                </p>
+                <p>
+                  1. Open Windows <strong>Settings → Time &amp; Language → Language &amp; Region</strong>.
+                </p>
+                <p>
+                  2. Click <strong>Add a language</strong>, choose <strong>{currentLangObj.name}</strong>, and check <strong>Text-to-speech</strong>.
+                </p>
+                <p>
+                  3. Alternatively, launch this app in <strong>Microsoft Edge</strong> (which includes Indian language voices out-of-the-box).
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Language Switcher Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -267,7 +368,11 @@ export const TextToSpeech = ({
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs sm:text-sm shadow-soft-sm hover:shadow-glow-brand transition-all cursor-pointer"
               >
                 <Play className="w-4 h-4 fill-current" />
-                <span>{isPaused ? "Resume" : `Play Narration (${currentLangObj.name})`}</span>
+                <span>
+                  {isPaused
+                    ? "Resume"
+                    : `Play Narration (${currentLangObj.name} - ${bcp47})`}
+                </span>
               </button>
             ) : (
               <button
@@ -331,10 +436,10 @@ export const TextToSpeech = ({
             <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-brand-600" />
-                <span>Voice Profile (All Languages Available):</span>
+                <span>Voice Profile:</span>
               </span>
               <span className="text-[11px] font-extrabold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md border border-brand-200">
-                {currentLangObj.flag} {currentLangObj.name} Active
+                {currentLangObj.flag} {currentLangObj.name} ({bcp47})
               </span>
             </label>
 
@@ -346,18 +451,29 @@ export const TextToSpeech = ({
               {allGroupedVoices.map((group) => (
                 <optgroup
                   key={group.langCode}
-                  label={`${group.flag} ${group.langName}`}
+                  label={`${group.flag} ${group.langName} (${group.bcp47})`}
                   className="font-bold text-slate-900 bg-slate-100"
                 >
-                  {group.voices.map((v, i) => (
+                  {group.voices.length > 0 ? (
+                    group.voices.map((v, i) => (
+                      <option
+                        key={`${group.langCode}-${i}`}
+                        value={v.name}
+                        className="font-normal text-slate-800 bg-white"
+                      >
+                        {v.name}
+                      </option>
+                    ))
+                  ) : (
                     <option
-                      key={`${group.langCode}-${i}`}
-                      value={v.name}
-                      className="font-normal text-slate-800 bg-white"
+                      key={`${group.langCode}-none`}
+                      value=""
+                      disabled
+                      className="font-normal text-slate-400 italic bg-white"
                     >
-                      {v.name}
+                      (No browser voice installed - uses Cloud Audio)
                     </option>
-                  ))}
+                  )}
                 </optgroup>
               ))}
             </select>

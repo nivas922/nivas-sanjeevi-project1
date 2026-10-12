@@ -4,6 +4,16 @@ import crypto from "crypto";
 import { env } from "../config/env.js";
 import { getLanguageConfig, isLanguageSupported, SUPPORTED_LANGUAGES } from "../config/languageConfig.js";
 
+export const VOICE_MODELS = {
+  "en-IN": "en-US-Standard-C",
+  "ta-IN": "ta-IN-Standard-A",
+  "hi-IN": "hi-IN-Standard-A",
+  "te-IN": "te-IN-Standard-A",
+  "kn-IN": "kn-IN-Standard-A",
+  "ml-IN": "ml-IN-Standard-A",
+  "bn-IN": "bn-IN-Standard-A"
+};
+
 export class TtsService {
   /**
    * Synthesize real audio speech for text in target language
