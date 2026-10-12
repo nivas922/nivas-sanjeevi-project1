@@ -2,6 +2,10 @@ import { env } from "../config/env.js";
 import { aiConfig } from "../config/aiConfig.js";
 import { DocumentChunk } from "../models/DocumentChunk.js";
 
+// Persistent cache for active working Gemini model and known-unsupported models across calls
+let activeWorkingModel = null;
+const unsupportedModels = new Set();
+
 export class AiSummaryService {
   /**
    * Exponential backoff retry wrapper for Gemini API calls
@@ -27,16 +31,33 @@ export class AiSummaryService {
       throw err;
     }
 
+    const preferredModel = env.GEMINI_MODEL || aiConfig.gemini.model || "gemini-3.5-flash-lite";
+    const rawCandidates = [
+      activeWorkingModel,
+      preferredModel,
+      "gemini-3.5-flash-lite",
+      "gemini-3.8-flash"
+    ];
 
-    const model = aiConfig.gemini.model || "gemini-1.5-flash";
-    const url = `${aiConfig.gemini.endpoint}/${model}:generateContent?key=${apiKey}`;
+    let candidateModels = Array.from(
+      new Set(rawCandidates.filter((m) => m && !unsupportedModels.has(m)))
+    );
 
+    if (candidateModels.length === 0) {
+      unsupportedModels.clear();
+      candidateModels = Array.from(new Set([preferredModel, "gemini-3.5-flash-lite", "gemini-3.8-flash"].filter(Boolean)));
+    }
+
+    let modelIndex = 0;
     const maxRetries = options.maxRetries || 3;
     let attempt = 0;
     let delayMs = options.initialDelayMs || 500;
 
-    while (attempt < maxRetries) {
+    while (attempt < maxRetries && modelIndex < candidateModels.length) {
       attempt++;
+      const currentModel = candidateModels[modelIndex];
+      const url = `${aiConfig.gemini.endpoint}/${currentModel}:generateContent?key=${apiKey}`;
+
       try {
         const response = await fetch(url, {
           method: "POST",
@@ -49,6 +70,23 @@ export class AiSummaryService {
             }
           })
         });
+
+        if (response.status === 404) {
+          const errText = await response.text();
+          if (errText.includes("not found") || errText.includes("not supported")) {
+            console.warn(`[AI-Service] Gemini model '${currentModel}' not found/supported. Caching as unsupported and trying next candidate model...`);
+            unsupportedModels.add(currentModel);
+            if (activeWorkingModel === currentModel) {
+              activeWorkingModel = null;
+            }
+            modelIndex++;
+            attempt = 0; // Reset attempts for next candidate model
+            continue;
+          }
+          const err = new Error(`Gemini API 404: ${errText.slice(0, 200)}`);
+          err.statusCode = 404;
+          throw err;
+        }
 
         if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
           if (attempt >= maxRetries) {
@@ -76,8 +114,14 @@ export class AiSummaryService {
           throw new Error("Gemini returned empty text candidate.");
         }
 
+        activeWorkingModel = currentModel;
         return geminiText;
       } catch (err) {
+        if (err.statusCode === 404 && modelIndex < candidateModels.length - 1) {
+          modelIndex++;
+          attempt = 0;
+          continue;
+        }
         if (attempt >= maxRetries || (err.statusCode && err.statusCode !== 429 && err.statusCode < 500)) {
           throw err;
         }
@@ -86,7 +130,20 @@ export class AiSummaryService {
       }
     }
 
-    throw new Error("Gemini API call failed after retries.");
+    throw new Error("Gemini API call failed after retries across candidate models.");
+  }
+
+  static getUnsupportedModels() {
+    return Array.from(unsupportedModels);
+  }
+
+  static getActiveWorkingModel() {
+    return activeWorkingModel;
+  }
+
+  static resetModelCache() {
+    activeWorkingModel = null;
+    unsupportedModels.clear();
   }
 
   /**

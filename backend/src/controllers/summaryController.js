@@ -151,7 +151,18 @@ export class SummaryController {
       }
       const targetLang = rawTargetLang || req.user?.preferred_language || "ta";
 
-      const summary = await Summary.findById(summaryId);
+      let summary = await Summary.findById(summaryId);
+      if (!summary && req.body.summary) {
+        summary = req.body.summary;
+      }
+      if (!summary && req.body.text) {
+        summary = {
+          id: summaryId,
+          summaryText: req.body.text,
+          summary_text: req.body.text,
+          topic: req.body.topic || "Textbook Summary"
+        };
+      }
       if (!summary) {
         return res.status(404).json({ success: false, error: "Summary not found." });
       }

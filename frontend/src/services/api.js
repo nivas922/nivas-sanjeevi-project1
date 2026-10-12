@@ -403,12 +403,32 @@ export const api = {
     return storageService.getSummaryById(id);
   },
 
-  async translateSummary(summaryId, targetLang) {
+  async translateSummary(summaryId, targetLang, summary = null) {
     try {
       const res = await fetch(`${API_BASE_URL}/summaries/${summaryId}/translate`, {
         method: "POST",
         headers: getAuthHeaders(),
-        body: JSON.stringify({ target_language: targetLang })
+        body: JSON.stringify({
+          target_language: targetLang,
+          summary: summary || undefined
+        })
+      });
+      return await handleApiResponse(res);
+    } catch (err) {
+      handleNetworkError(err);
+    }
+  },
+
+  async translateText({ text, targetLanguage = "ta", sourceLanguage = "en" }) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/translate`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          text,
+          target_language: targetLanguage,
+          source_language: sourceLanguage
+        })
       });
       return await handleApiResponse(res);
     } catch (err) {

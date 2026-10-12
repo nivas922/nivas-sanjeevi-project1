@@ -3,7 +3,7 @@ import { env } from "./env.js";
 export const aiConfig = {
   gemini: {
     apiKey: env.GEMINI_API_KEY,
-    model: "gemini-1.5-flash",
+    model: env.GEMINI_MODEL || "gemini-3.5-flash-lite",
     endpoint: "https://generativelanguage.googleapis.com/v1beta/models"
   },
   openai: {

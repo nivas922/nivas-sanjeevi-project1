@@ -27,7 +27,7 @@ export const TranslationModal = ({
     setLoading(true);
     setError(null);
     try {
-      const res = await api.translateSummary(summary.id, langCode);
+      const res = await api.translateSummary(summary.id, langCode, summary);
       setTranslatedData(res.translation);
     } catch (err) {
       setError(err.message || "Failed to translate summary. Please try again.");

@@ -15,13 +15,13 @@ import {
 } from "lucide-react";
 import { TextToSpeech } from "../components/tts/TextToSpeech";
 import { SUPPORTED_LANGUAGES } from "../data/translations";
-import { translatorService } from "../services/translatorService";
+import { api } from "../services/api";
 import { useToast } from "../context/ToastContext";
 import { useLearning } from "../context/LearningContext";
 import { Button } from "../components/common/Button";
 
 export const TextToSpeechPage = () => {
-  const { showSuccess } = useToast();
+  const { showSuccess, showError } = useToast();
   const { activeLanguage } = useLearning();
 
   const [sourceLang, setSourceLang] = useState("en");
@@ -46,15 +46,31 @@ export const TextToSpeechPage = () => {
     { label: "English ➔ Bengali", source: "en", target: "bn" }
   ];
 
-  const handleTranslate = (sLang = sourceLang, tLang = targetLang) => {
+  const handleTranslate = async (sLang = sourceLang, tLang = targetLang) => {
+    if (!sourceText || !sourceText.trim()) {
+      showError("Please enter text to translate.");
+      return;
+    }
     setIsTranslating(true);
-    setTimeout(() => {
-      const result = translatorService.translateText(sourceText, tLang, sLang);
-      setTranslatedText(result);
+    try {
+      const res = await api.translateText({
+        text: sourceText,
+        targetLanguage: tLang,
+        sourceLanguage: sLang
+      });
+      if (res && (res.translatedText || res.text)) {
+        setTranslatedText(res.translatedText || res.text);
+        const targetName = SUPPORTED_LANGUAGES.find(l => l.code === tLang)?.name || tLang;
+        showSuccess(`Successfully translated into ${targetName}!`);
+      } else {
+        throw new Error("Translation returned empty response.");
+      }
+    } catch (err) {
+      console.warn("API translation notice:", err.message);
+      showError(err.message || "Translation service is currently unavailable. Please try again later.");
+    } finally {
       setIsTranslating(false);
-      const targetName = SUPPORTED_LANGUAGES.find(l => l.code === tLang)?.name || tLang;
-      showSuccess(`Successfully translated into ${targetName}!`);
-    }, 250);
+    }
   };
 
   const handleSelectPair = (pair) => {

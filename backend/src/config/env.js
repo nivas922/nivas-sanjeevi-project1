@@ -64,6 +64,7 @@ export const env = {
   STORAGE_TYPE: process.env.STORAGE_TYPE || "local",
   UPLOAD_DIR: process.env.UPLOAD_DIR || path.resolve(__dirname, "../../uploads"),
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
+  GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
   GOOGLE_TRANSLATE_API_KEY: process.env.GOOGLE_TRANSLATE_API_KEY || "",
   OTP_PROVIDER: process.env.OTP_PROVIDER || "dev",

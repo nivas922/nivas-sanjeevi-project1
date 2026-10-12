@@ -2,6 +2,7 @@ import { env } from "../config/env.js";
 import { Book } from "../models/Book.js";
 import { DoubtRetrievalService } from "./doubtRetrievalService.js";
 import { AiSummaryService } from "./aiSummaryService.js";
+import { getLanguageConfig } from "../config/languageConfig.js";
 
 export class AiTutorService {
   /**
@@ -67,12 +68,15 @@ export class AiTutorService {
       )
       .join("\n\n---\n\n");
 
+    const langConfig = getLanguageConfig(targetLanguage);
+    const targetLangDisplay = langConfig ? `${langConfig.name} (${langConfig.nativeName})` : targetLanguage;
+
     // 6. Build Gemini Prompt
     const prompt = `You are an educational AI academic tutor answering a student's question based strictly on their uploaded textbook.
 
 Textbook Title: ${book.title}
 Subject: ${book.subject}
-Target Language: ${targetLanguage}
+Target Language: ${targetLangDisplay}
 Student Question: "${question}"
 
 Supplied Textbook Context:
@@ -82,7 +86,7 @@ STRICT AI TUTOR RULES:
 1. Answer using ONLY the supplied textbook context above. Do NOT invent facts or use external knowledge not present in the context.
 2. If the textbook context does NOT contain enough information to answer the question, clearly state: "The uploaded textbook does not contain enough information to answer this question confidently."
 3. Do not pretend external knowledge came from the textbook.
-4. Explain in simple academic language appropriate for a student in target language '${targetLanguage}'.
+4. Explain in simple academic language appropriate for a student in target language '${targetLangDisplay}'.
 5. Provide direct answer, key points, and an example ONLY if supported by the textbook context.
 6. Include source metadata referencing the exact chapters, sections, page ranges, and chunk IDs used from the context.
 7. Return ONLY a valid JSON object matching this schema:

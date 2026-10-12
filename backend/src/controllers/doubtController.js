@@ -1,6 +1,7 @@
 import { AiTutorService } from "../services/aiTutorService.js";
 import { ActivityLog } from "../models/ActivityLog.js";
 import { DEFAULT_USER_ID, resolveAuthUserId } from "../middleware/auth.js";
+import { isLanguageSupported, SUPPORTED_LANGUAGES } from "../config/languageConfig.js";
 
 export class DoubtController {
   // POST /ask-doubt
@@ -29,6 +30,13 @@ export class DoubtController {
         return res.status(400).json({
           success: false,
           error: "Question is too long (maximum 1000 characters)."
+        });
+      }
+
+      if (targetLang && !isLanguageSupported(targetLang)) {
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported language: '${targetLang}'. Supported languages are: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}.`
         });
       }
 

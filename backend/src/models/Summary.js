@@ -4,16 +4,26 @@ import { v4 as uuidv4 } from "uuid";
 export class Summary {
   static format(row) {
     if (!row) return null;
-    let keyConcepts = [];
-    let definitions = [];
-    let formulas = [];
-    let examples = [];
-    try { keyConcepts = JSON.parse(row.key_concepts_json || "[]"); } catch {}
-    try { definitions = JSON.parse(row.definitions_json || "[]"); } catch {}
-    try { formulas = JSON.parse(row.formulas_json || "[]"); } catch {}
-    try { examples = JSON.parse(row.examples_json || "[]"); } catch {}
-    let rawQuickRev = [];
-    try { rawQuickRev = JSON.parse(row.quick_revision_json || "[]"); } catch {}
+    const safeParse = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      if (typeof val === "object") return val;
+      try {
+        let parsed = JSON.parse(val);
+        if (typeof parsed === "string") {
+          try { parsed = JSON.parse(parsed); } catch {}
+        }
+        return parsed;
+      } catch {
+        return [];
+      }
+    };
+
+    const keyConcepts = Array.isArray(safeParse(row.key_concepts_json)) ? safeParse(row.key_concepts_json) : [];
+    const definitions = Array.isArray(safeParse(row.definitions_json)) ? safeParse(row.definitions_json) : [];
+    const formulas = Array.isArray(safeParse(row.formulas_json)) ? safeParse(row.formulas_json) : [];
+    const examples = Array.isArray(safeParse(row.examples_json)) ? safeParse(row.examples_json) : [];
+    const rawQuickRev = safeParse(row.quick_revision_json);
 
     const quickRevision = Array.isArray(rawQuickRev) ? rawQuickRev : (rawQuickRev?.revisionPoints || []);
     const chapters = Array.isArray(rawQuickRev?.chapters) ? rawQuickRev.chapters : [];
@@ -29,6 +39,7 @@ export class Summary {
       summary_text: row.summary_text,
       summaryText: row.summary_text,
       keyConcepts,
+      keyPoints: keyConcepts,
       definitions,
       formulas,
       examples,
@@ -75,6 +86,18 @@ export class Summary {
     quick_revision = [],
     audio_url = null
   }) {
+    const toValidJsonString = (val) => {
+      if (typeof val === "string") {
+        try {
+          JSON.parse(val);
+          return val;
+        } catch {
+          return JSON.stringify([val]);
+        }
+      }
+      return JSON.stringify(val || []);
+    };
+
     await dbRun(
       `INSERT INTO summaries (
         id, book_id, user_id, language, summary_text,
@@ -87,11 +110,11 @@ export class Summary {
         user_id,
         language,
         summary_text,
-        JSON.stringify(key_concepts),
-        JSON.stringify(definitions),
-        JSON.stringify(formulas),
-        JSON.stringify(examples),
-        JSON.stringify(quick_revision),
+        toValidJsonString(key_concepts),
+        toValidJsonString(definitions),
+        toValidJsonString(formulas),
+        toValidJsonString(examples),
+        toValidJsonString(quick_revision),
         audio_url
       ]
     );

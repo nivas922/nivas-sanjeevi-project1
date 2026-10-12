@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { env } from "../config/env.js";
+import { aiConfig } from "../config/aiConfig.js";
 import { getLanguageConfig, isLanguageSupported, SUPPORTED_LANGUAGES } from "../config/languageConfig.js";
 import { AiSummaryService } from "./aiSummaryService.js";
 
@@ -83,7 +84,11 @@ export class TranslationService {
     const targetConfig = getLanguageConfig(targetLang);
 
     if (summary.language === targetConfig.code) {
-      return summary;
+      return {
+        ...summary,
+        summaryText: summary.summaryText || summary.summary_text,
+        keyPoints: summary.keyPoints || summary.keyConcepts || summary.key_concepts || []
+      };
     }
 
     // Collision-proof cache key incorporating content hash
@@ -100,7 +105,7 @@ export class TranslationService {
       return translationCache.get(cacheKey);
     }
 
-    const apiKey = env.GEMINI_API_KEY;
+    const apiKey = env.GEMINI_API_KEY || aiConfig?.gemini?.apiKey;
     if (!apiKey && env.NODE_ENV !== "test") {
       const err = new Error("Translation is currently unavailable. Please configure GEMINI_API_KEY in environment variables.");
       err.statusCode = 503;

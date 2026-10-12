@@ -19,3 +19,5 @@ services:
         value: https://nivas-sanjeevi-project1-pnb5.vercel.app
       - key: CORS_ORIGIN
         value: https://nivas-sanjeevi-project1-pnb5.vercel.app
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite

@@ -18,6 +18,7 @@ import progressRoutes from "./routes/progressRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import recommendationRoutes from "./routes/recommendationRoutes.js";
 import doubtRoutes from "./routes/doubtRoutes.js";
+import translationRoutes from "./routes/translationRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -103,6 +104,7 @@ const registerRoutes = (prefix = "") => {
   app.use(`${prefix}`, profileRoutes);
   app.use(`${prefix}`, recommendationRoutes);
   app.use(`${prefix}`, doubtRoutes);
+  app.use(`${prefix}`, translationRoutes);
 };
 
 // Mount at both /api and /
