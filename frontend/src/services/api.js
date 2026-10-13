@@ -109,6 +109,25 @@ export const handleApiResponse = async (res) => {
 };
 
 /**
+ * Safe fetch with configurable AbortController timeout
+ */
+export const fetchWithTimeout = async (url, options = {}, timeoutMs = 45000) => {
+  const controller = new AbortController();
+  const signal = options.signal || controller.signal;
+  let timerId = null;
+  if (!options.signal) {
+    timerId = setTimeout(() => {
+      controller.abort(new Error(`Request timed out after ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+  }
+  try {
+    return await fetch(url, { ...options, signal });
+  } finally {
+    if (timerId) clearTimeout(timerId);
+  }
+};
+
+/**
  * Network and connectivity failure handler
  */
 export const handleNetworkError = (err) => {
@@ -118,11 +137,14 @@ export const handleNetworkError = (err) => {
 
   console.error("Network or API communication failure:", err);
   const isNetworkFailure =
+    err.name === "AbortError" ||
+    err.name === "TimeoutError" ||
+    err.message?.toLowerCase().includes("timed out") ||
+    err.message?.toLowerCase().includes("timeout") ||
     err.name === "TypeError" ||
     err.message?.includes("Failed to fetch") ||
     err.message?.includes("NetworkError") ||
-    err.message?.includes("connection refused") ||
-    err.message?.includes("timeout");
+    err.message?.includes("connection refused");
 
   if (isNetworkFailure) {
     const netErr = new Error("Unable to connect to the backend server. Please check your connection and try again.");
@@ -174,97 +196,142 @@ export const api = {
   },
 
   // Textbook Upload and Multilingual Processing Pipeline
-  async uploadTextbook(file, metadata, onProgress = () => {}) {
+  async uploadTextbook(file, metadata, onProgress = () => {}, options = {}) {
     const isScanned = file.name.endsWith(".png") || file.name.endsWith(".jpg") || file.name.endsWith(".jpeg");
-    const stages = [
-      { step: 1, label: "Uploading document...", percent: 15 },
-      { step: 2, label: isScanned ? "Scanned document detected. Extracting text using OCR..." : "Extracting selectable text with PyMuPDF...", percent: 30 },
-      { step: 3, label: "Detecting chapters and structural hierarchy...", percent: 45 },
-      { step: 4, label: "Analyzing key formulas, definitions and topics...", percent: 60 },
-      { step: 5, label: `Generating AI summarization in ${metadata.targetLanguageName || "selected language"}...`, percent: 75 },
-      { step: 6, label: "Synthesizing multilingual audio representations...", percent: 85 },
-      { step: 7, label: `Creating ${metadata.questionCount || 5}-question adaptive quiz bank...`, percent: 95 },
-      { step: 8, label: "Personalized learning curriculum ready!", percent: 100 }
-    ];
-
-    for (const stage of stages) {
-      await sleep(150);
-      onProgress(stage);
-    }
-
-    const cleanTitle = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
-    const formattedTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
     const langCode = metadata.targetLanguage || "en";
     const questionCount = parseInt(metadata.questionCount || 5, 10);
+    const timeoutMs = options.timeoutMs || 45000;
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("title", formattedTitle);
-    formData.append("subject", metadata.subject || formattedTitle);
+    let backendBook = options.existingBook || null;
+    let backendSummary = options.existingSummary || null;
+    let backendQuiz = options.existingQuiz || null;
+    let backendLearningPlan = options.existingLearningPlan || null;
 
-    // 1. Upload textbook to backend
     let uploadData;
-    try {
-      const uploadRes = await fetch(`${API_BASE_URL}/upload-book`, {
-        method: "POST",
-        body: formData
+    // Stage 1 & 2: Uploading & Text Extraction
+    if (!backendBook) {
+      onProgress({ step: 1, label: "Uploading document...", percent: 12 });
+
+      const cleanTitle = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+      const formattedTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", formattedTitle);
+      formData.append("subject", metadata.subject || formattedTitle);
+
+      onProgress({
+        step: 2,
+        label: isScanned ? "Scanned document detected. Extracting text using OCR..." : "Extracting selectable text with PyMuPDF...",
+        percent: 25
       });
-      uploadData = await handleApiResponse(uploadRes);
-    } catch (err) {
-      handleNetworkError(err);
-    }
 
-    if (!uploadData || !uploadData.book) {
-      throw new Error("Textbook upload failed: server did not return book information.");
-    }
-
-    const backendBook = uploadData.book;
-    const bookId = uploadData.book_id || backendBook.id;
-
-    // 2. Call /summarize with target_language
-    let sumData;
-    try {
-      const sumRes = await fetch(`${API_BASE_URL}/summarize`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          book_id: bookId,
-          target_language: langCode
-        })
-      });
-      sumData = await handleApiResponse(sumRes);
-    } catch (err) {
-      handleNetworkError(err);
-    }
-
-    if (!sumData || !sumData.summary) {
-      throw new Error("AI summarization failed: server did not return summary.");
-    }
-
-    const backendSummary = sumData.summary;
-
-    // 3. Call /generate-quiz
-    let backendQuiz = null;
-    try {
-      const quizRes = await fetch(`${API_BASE_URL}/generate-quiz`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          book_id: bookId,
-          num_questions: questionCount,
-          language: langCode
-        })
-      });
-      if (quizRes.ok) {
-        const quizData = await quizRes.json();
-        backendQuiz = quizData.quiz;
-        if (backendQuiz) {
-          storageService.addQuiz(backendQuiz);
-        }
+      try {
+        const uploadRes = await fetchWithTimeout(`${API_BASE_URL}/upload-book`, {
+          method: "POST",
+          body: formData
+        }, timeoutMs);
+        uploadData = await handleApiResponse(uploadRes);
+      } catch (err) {
+        handleNetworkError(err);
       }
-    } catch (quizErr) {
-      console.warn("Quiz generation notice:", quizErr.message);
+
+      if (!uploadData || !uploadData.book) {
+        throw new Error("Textbook upload failed: server did not return book information.");
+      }
+
+      backendBook = uploadData.book;
     }
+
+    const bookId = uploadData?.book_id || backendBook.id || backendBook.book_id;
+
+    // Stage 3 & 4: Chapters and Topics structural hierarchy
+    onProgress({ step: 3, label: "Detecting chapters and structural hierarchy...", percent: 40 });
+    await sleep(150);
+    onProgress({ step: 4, label: "Analyzing key formulas, definitions and topics...", percent: 52 });
+    await sleep(150);
+
+    // Stage 5 & 6: AI Summarization & Multilingual Audio
+    if (!backendSummary) {
+      onProgress({
+        step: 5,
+        label: `Generating AI summarization in ${metadata.targetLanguageName || "selected language"}...`,
+        percent: 66
+      });
+
+      let sumData;
+      try {
+        const sumRes = await fetchWithTimeout(`${API_BASE_URL}/summarize`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            book_id: bookId,
+            target_language: langCode
+          })
+        }, timeoutMs);
+        sumData = await handleApiResponse(sumRes);
+      } catch (err) {
+        handleNetworkError(err);
+      }
+
+      if (!sumData || !sumData.summary) {
+        throw new Error("AI summarization failed: server did not return summary.");
+      }
+
+      backendSummary = sumData.summary;
+    }
+
+    onProgress({ step: 6, label: "Synthesizing multilingual audio representations...", percent: 78 });
+    await sleep(150);
+
+    // Stage 7: Creating Adaptive Quiz Bank
+    if (!backendQuiz) {
+      onProgress({
+        step: 7,
+        label: `Creating ${metadata.questionCount || 5}-question adaptive quiz bank...`,
+        percent: 88
+      });
+
+      try {
+        const quizRes = await fetchWithTimeout(`${API_BASE_URL}/generate-quiz`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            book_id: bookId,
+            num_questions: questionCount,
+            language: langCode
+          })
+        }, timeoutMs);
+        if (quizRes.ok) {
+          const quizData = await quizRes.json();
+          backendQuiz = quizData.quiz;
+          if (backendQuiz) {
+            storageService.addQuiz(backendQuiz);
+          }
+        }
+      } catch (quizErr) {
+        console.warn("Quiz generation notice:", quizErr.message);
+      }
+    }
+
+    // Stage 8: Preparing Personalized Learning Plan
+    onProgress({ step: 8, label: "Preparing personalized learning plan...", percent: 96 });
+
+    if (!backendLearningPlan) {
+      try {
+        const planRes = await fetchWithTimeout(`${API_BASE_URL}/adaptive-learning/${bookId}`, {
+          headers: getAuthHeaders()
+        }, options.planTimeoutMs || 8000);
+        if (planRes.ok) {
+          backendLearningPlan = await planRes.json();
+        }
+      } catch (planErr) {
+        console.warn("Adaptive learning plan preparation notice:", planErr.message);
+      }
+    }
+
+    // Mark all stages 100% complete
+    onProgress({ step: 9, label: "Personalized learning curriculum ready!", percent: 100 });
 
     // Save genuine backend artifacts to storageService ONLY on success:
     storageService.addTextbook(backendBook);
@@ -274,7 +341,8 @@ export const api = {
       status: "success",
       textbook: backendBook,
       summary: backendSummary,
-      quiz: backendQuiz
+      quiz: backendQuiz,
+      learningPlan: backendLearningPlan
     };
   },
 

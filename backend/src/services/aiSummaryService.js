@@ -59,9 +59,11 @@ export class AiSummaryService {
       const url = `${aiConfig.gemini.endpoint}/${currentModel}:generateContent?key=${apiKey}`;
 
       try {
+        const timeoutMs = options.timeoutMs || 30000;
         const response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(timeoutMs),
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {

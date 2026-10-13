@@ -14,7 +14,9 @@ import {
   Sliders,
   HelpCircle,
   Scan,
-  Edit3
+  Edit3,
+  AlertCircle,
+  RotateCw
 } from "lucide-react";
 import { Button } from "../components/common/Button";
 import { ProgressBar } from "../components/common/ProgressBar";
@@ -43,6 +45,8 @@ export const UploadTextbook = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStage, setCurrentStage] = useState(null);
   const [progressPercent, setProgressPercent] = useState(0);
+  const [processingError, setProcessingError] = useState(null);
+  const [savedArtifacts, setSavedArtifacts] = useState({});
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -118,7 +122,7 @@ export const UploadTextbook = () => {
     return parseInt(questionCountSelect, 10) || 5;
   };
 
-  const handleGenerateSummary = async () => {
+  const handleGenerateSummary = async (retryOptions = null) => {
     if (!selectedFile) {
       showWarning("Please select a textbook file before generating summary.");
       return;
@@ -127,11 +131,15 @@ export const UploadTextbook = () => {
     const finalQuestionCount = getEffectiveQuestionCount();
 
     setIsProcessing(true);
-    setProgressPercent(10);
+    setProcessingError(null);
+    if (!retryOptions && Object.keys(savedArtifacts).length === 0) {
+      setProgressPercent(10);
+    }
 
     const targetLangObj = SUPPORTED_LANGUAGES.find(l => l.code === targetLanguage) || SUPPORTED_LANGUAGES[0];
 
     try {
+      const activeOptions = retryOptions || savedArtifacts || {};
       const res = await api.uploadTextbook(
         selectedFile,
         {
@@ -144,8 +152,13 @@ export const UploadTextbook = () => {
         (stage) => {
           setCurrentStage(stage);
           setProgressPercent(stage.percent);
-        }
+        },
+        activeOptions
       );
+
+      if (res.textbook) setSavedArtifacts(prev => ({ ...prev, existingBook: res.textbook }));
+      if (res.summary) setSavedArtifacts(prev => ({ ...prev, existingSummary: res.summary }));
+      if (res.quiz) setSavedArtifacts(prev => ({ ...prev, existingQuiz: res.quiz }));
 
       refreshLearningData();
       showSuccess(`Textbook processed into ${targetLangObj.name} with ${finalQuestionCount}-question quiz!`);
@@ -154,10 +167,18 @@ export const UploadTextbook = () => {
         navigate(`/summaries/${res.summary.id}`);
       }, 900);
     } catch (err) {
-      showError(err.message || "Unable to generate summary. Please try again.");
-      setIsProcessing(false);
-      setProgressPercent(0);
+      const msg = err.message || "Processing encountered an issue. Please try again.";
+      setProcessingError(msg);
+      showError(msg);
     }
+  };
+
+  const handleResetProcessing = () => {
+    setIsProcessing(false);
+    setProcessingError(null);
+    setCurrentStage(null);
+    setProgressPercent(0);
+    setSavedArtifacts({});
   };
 
   return (
@@ -351,18 +372,28 @@ export const UploadTextbook = () => {
           </div>
         </div>
       ) : (
-        /* Processing 8-step screen */
+        /* Processing 8-step screen with error & retry support */
         <div className="bg-white rounded-3xl p-8 sm:p-12 border border-slate-200/80 shadow-soft-lg text-center space-y-8 animate-in zoom-in-95 duration-200">
-          <div className="w-20 h-20 rounded-3xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto relative">
-            <Loader2 className="w-10 h-10 animate-spin" />
+          <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mx-auto relative ${
+            processingError ? "bg-rose-50 text-rose-600 border border-rose-200" : "bg-brand-50 text-brand-600"
+          }`}>
+            {processingError ? (
+              <AlertCircle className="w-10 h-10 text-rose-600" />
+            ) : (
+              <Loader2 className="w-10 h-10 animate-spin" />
+            )}
           </div>
 
           <div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-              Processing Document & Synthesizing Knowledge
+              {processingError ? "Processing Paused / Issue Encountered" : "Processing Document & Synthesizing Knowledge"}
             </h2>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-md mx-auto">
-              Extracting chapters, generating summaries, translating audio, and preparing your {getEffectiveQuestionCount()}-question quiz.
+            <p className={`text-xs sm:text-sm mt-1 max-w-md mx-auto ${
+              processingError ? "text-rose-600 font-semibold" : "text-slate-500"
+            }`}>
+              {processingError
+                ? processingError
+                : `Extracting chapters, generating summaries, translating audio, and preparing your ${getEffectiveQuestionCount()}-question quiz.`}
             </p>
           </div>
 
@@ -370,12 +401,12 @@ export const UploadTextbook = () => {
             <ProgressBar
               value={progressPercent}
               size="lg"
-              color="brand"
-              label={currentStage?.label || "Processing..."}
+              color={processingError ? "rose" : "brand"}
+              label={processingError ? `Failed at Step ${currentStage?.step || 8}` : (currentStage?.label || "Processing...")}
             />
           </div>
 
-          {isScanned && (
+          {isScanned && !processingError && (
             <div className="max-w-md mx-auto p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold flex items-center justify-center gap-2">
               <Scan className="w-4 h-4 text-amber-600 animate-pulse" />
               <span>Scanned document detected. Extracting text using OCR...</span>
@@ -401,6 +432,8 @@ export const UploadTextbook = () => {
                   className={`flex items-center gap-2.5 text-xs py-1 transition-colors ${
                     isCompleted
                       ? "text-emerald-700 font-bold"
+                      : isCurrent && processingError
+                      ? "text-rose-600 font-bold"
                       : isCurrent
                       ? "text-brand-600 font-bold animate-pulse"
                       : "text-slate-400"
@@ -408,6 +441,8 @@ export const UploadTextbook = () => {
                 >
                   {isCompleted ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  ) : isCurrent && processingError ? (
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
                   ) : isCurrent ? (
                     <Loader2 className="w-4 h-4 text-brand-600 animate-spin shrink-0" />
                   ) : (
@@ -418,6 +453,27 @@ export const UploadTextbook = () => {
               );
             })}
           </div>
+
+          {/* Action buttons on error / timeout */}
+          {processingError && (
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4 border-t border-slate-100 animate-in fade-in duration-200">
+              <Button
+                variant="primary"
+                icon={RotateCw}
+                onClick={() => handleGenerateSummary(savedArtifacts)}
+                className="w-full sm:w-auto px-6 py-2.5 shadow-soft-sm"
+              >
+                Retry Processing
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={handleResetProcessing}
+                className="w-full sm:w-auto px-6 py-2.5"
+              >
+                Cancel & Start Over
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
