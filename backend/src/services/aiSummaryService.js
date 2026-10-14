@@ -59,7 +59,7 @@ export class AiSummaryService {
       const url = `${aiConfig.gemini.endpoint}/${currentModel}:generateContent?key=${apiKey}`;
 
       try {
-        const timeoutMs = options.timeoutMs || 30000;
+        const timeoutMs = options.timeoutMs || 45000;
         const response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -119,12 +119,26 @@ export class AiSummaryService {
         activeWorkingModel = currentModel;
         return geminiText;
       } catch (err) {
-        if (err.statusCode === 404 && modelIndex < candidateModels.length - 1) {
+        const isTimeout =
+          err.name === "TimeoutError" ||
+          err.name === "AbortError" ||
+          err.message?.toLowerCase().includes("timeout") ||
+          err.message?.toLowerCase().includes("aborted");
+
+        if ((err.statusCode === 404 || isTimeout) && modelIndex < candidateModels.length - 1) {
+          if (isTimeout) {
+            console.warn(`[AI-Service] Gemini model '${currentModel}' timed out. Trying next candidate model...`);
+          }
           modelIndex++;
           attempt = 0;
           continue;
         }
         if (attempt >= maxRetries || (err.statusCode && err.statusCode !== 429 && err.statusCode < 500)) {
+          if (isTimeout && !err.statusCode) {
+            const timeoutErr = new Error("Gemini API call timed out after retries.");
+            timeoutErr.statusCode = 504;
+            throw timeoutErr;
+          }
           throw err;
         }
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -278,6 +292,20 @@ Return ONLY a valid JSON object:
    * Step 3: Chapter-Level Summarization
    */
   static async summarizeChapter(chapterName, sectionSummaries, targetLanguage = "en") {
+    if (sectionSummaries.length === 1) {
+      const s = sectionSummaries[0];
+      return {
+        chapter: chapterName,
+        overview: s.overview || s.summary,
+        keyPoints: s.keyPoints || [],
+        definitions: s.definitions || [],
+        formulas: s.formulas || [],
+        examples: s.examples || [],
+        examPoints: s.examPoints || [],
+        sourcePages: `${s.pageStart || 1}-${s.pageEnd || 1}`
+      };
+    }
+
     const pageStart = Math.min(...sectionSummaries.map((s) => s.pageStart || 1));
     const pageEnd = Math.max(...sectionSummaries.map((s) => s.pageEnd || 1));
 
@@ -331,6 +359,19 @@ Return ONLY a valid JSON object:
    * Step 4: Final Textbook Summary Generation
    */
   static async generateFinalBookSummary(bookTitle, subject, chapterSummaries, targetLanguage = "en") {
+    if (chapterSummaries.length === 1) {
+      const c = chapterSummaries[0];
+      return {
+        overallSummary: c.overview || c.summary,
+        keyPoints: c.keyPoints || [],
+        definitions: c.definitions || [],
+        formulas: c.formulas || [],
+        examples: c.examples || [],
+        quickRevision: c.examPoints || c.quickRevision || [],
+        chapters: chapterSummaries
+      };
+    }
+
     const combinedChapters = chapterSummaries
       .map(
         (c) =>

@@ -241,6 +241,10 @@ export const api = {
       }
 
       backendBook = uploadData.book;
+      if (typeof options.onArtifactCreated === "function") {
+        options.onArtifactCreated("existingBook", backendBook);
+      }
+      options.existingBook = backendBook;
     }
 
     const bookId = uploadData?.book_id || backendBook.id || backendBook.book_id;
@@ -260,6 +264,7 @@ export const api = {
       });
 
       let sumData;
+      const summarizeTimeoutMs = options.summarizeTimeoutMs || options.timeoutMs || 150000;
       try {
         const sumRes = await fetchWithTimeout(`${API_BASE_URL}/summarize`, {
           method: "POST",
@@ -268,9 +273,14 @@ export const api = {
             book_id: bookId,
             target_language: langCode
           })
-        }, timeoutMs);
+        }, summarizeTimeoutMs);
         sumData = await handleApiResponse(sumRes);
       } catch (err) {
+        if (err.name === "AbortError" || err.message?.toLowerCase().includes("timed out") || err.message?.toLowerCase().includes("timeout")) {
+          const timeoutErr = new Error("AI summarization took longer than expected. Please click 'Retry Processing' to resume.");
+          timeoutErr.status = 504;
+          throw timeoutErr;
+        }
         handleNetworkError(err);
       }
 
@@ -279,6 +289,10 @@ export const api = {
       }
 
       backendSummary = sumData.summary;
+      if (typeof options.onArtifactCreated === "function") {
+        options.onArtifactCreated("existingSummary", backendSummary);
+      }
+      options.existingSummary = backendSummary;
     }
 
     onProgress({ step: 6, label: "Synthesizing multilingual audio representations...", percent: 78 });
@@ -307,6 +321,10 @@ export const api = {
           backendQuiz = quizData.quiz;
           if (backendQuiz) {
             storageService.addQuiz(backendQuiz);
+            if (typeof options.onArtifactCreated === "function") {
+              options.onArtifactCreated("existingQuiz", backendQuiz);
+            }
+            options.existingQuiz = backendQuiz;
           }
         }
       } catch (quizErr) {
@@ -324,6 +342,10 @@ export const api = {
         }, options.planTimeoutMs || 8000);
         if (planRes.ok) {
           backendLearningPlan = await planRes.json();
+          if (typeof options.onArtifactCreated === "function") {
+            options.onArtifactCreated("existingLearningPlan", backendLearningPlan);
+          }
+          options.existingLearningPlan = backendLearningPlan;
         }
       } catch (planErr) {
         console.warn("Adaptive learning plan preparation notice:", planErr.message);

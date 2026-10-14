@@ -139,7 +139,13 @@ export const UploadTextbook = () => {
     const targetLangObj = SUPPORTED_LANGUAGES.find(l => l.code === targetLanguage) || SUPPORTED_LANGUAGES[0];
 
     try {
-      const activeOptions = retryOptions || savedArtifacts || {};
+      const baseOptions = retryOptions || savedArtifacts || {};
+      const activeOptions = {
+        ...baseOptions,
+        onArtifactCreated: (type, data) => {
+          setSavedArtifacts(prev => ({ ...prev, [type]: data }));
+        }
+      };
       const res = await api.uploadTextbook(
         selectedFile,
         {
@@ -159,6 +165,7 @@ export const UploadTextbook = () => {
       if (res.textbook) setSavedArtifacts(prev => ({ ...prev, existingBook: res.textbook }));
       if (res.summary) setSavedArtifacts(prev => ({ ...prev, existingSummary: res.summary }));
       if (res.quiz) setSavedArtifacts(prev => ({ ...prev, existingQuiz: res.quiz }));
+      if (res.learningPlan) setSavedArtifacts(prev => ({ ...prev, existingLearningPlan: res.learningPlan }));
 
       refreshLearningData();
       showSuccess(`Textbook processed into ${targetLangObj.name} with ${finalQuestionCount}-question quiz!`);
