@@ -17,9 +17,14 @@ const API_BASE_URL = resolveApiBaseUrl();
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const getAuthHeaders = () => {
-  return {
+  const headers = {
     "Content-Type": "application/json"
   };
+  const token = storageService.getToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
 };
 
 /**
@@ -227,8 +232,14 @@ export const api = {
       });
 
       try {
+        const uploadHeaders = {};
+        const token = storageService.getToken();
+        if (token) {
+          uploadHeaders["Authorization"] = `Bearer ${token}`;
+        }
         const uploadRes = await fetchWithTimeout(`${API_BASE_URL}/upload-book`, {
           method: "POST",
+          headers: uploadHeaders,
           body: formData
         }, timeoutMs);
         uploadData = await handleApiResponse(uploadRes);
@@ -241,6 +252,8 @@ export const api = {
       }
 
       backendBook = uploadData.book;
+      // Immediately register the genuine uploaded book into client storage
+      storageService.addTextbook(backendBook);
       if (typeof options.onArtifactCreated === "function") {
         options.onArtifactCreated("existingBook", backendBook);
       }
@@ -763,6 +776,7 @@ export const api = {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.books)) {
+          storageService.setAllTextbooks(data.books);
           return data.books;
         }
       }

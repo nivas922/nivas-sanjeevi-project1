@@ -84,8 +84,10 @@ export const storageService = {
   },
 
   addTextbook(textbook) {
+    if (!textbook || !textbook.id) return textbook;
     const list = this.getTextbooks();
-    const updated = [textbook, ...list];
+    const filtered = list.filter(tb => tb.id !== textbook.id);
+    const updated = [textbook, ...filtered];
     localStorage.setItem(STORAGE_KEYS.TEXTBOOKS, JSON.stringify(updated));
 
     // Add this real uploaded subject to progress tracking
@@ -108,6 +110,12 @@ export const storageService = {
     const list = this.getTextbooks().filter(t => t.id !== id);
     localStorage.setItem(STORAGE_KEYS.TEXTBOOKS, JSON.stringify(list));
     return true;
+  },
+
+  setAllTextbooks(textbooks) {
+    if (Array.isArray(textbooks)) {
+      localStorage.setItem(STORAGE_KEYS.TEXTBOOKS, JSON.stringify(textbooks));
+    }
   },
 
   getSummaries() {

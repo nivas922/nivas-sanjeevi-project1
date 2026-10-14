@@ -113,7 +113,19 @@ export class BookController {
   // GET /books
   static async getUserBooks(req, res, next) {
     try {
-      const books = await Book.findAll();
+      const authUserId = resolveAuthUserId(req);
+      let books;
+      if (authUserId && authUserId !== DEFAULT_USER_ID) {
+        const userBooks = await Book.findByUserId(authUserId);
+        const defaultBooks = await Book.findByUserId(DEFAULT_USER_ID);
+        const bookMap = new Map();
+        for (const b of [...userBooks, ...defaultBooks]) {
+          if (!bookMap.has(b.id)) bookMap.set(b.id, b);
+        }
+        books = Array.from(bookMap.values());
+      } else {
+        books = await Book.findByUserId(DEFAULT_USER_ID);
+      }
       return res.status(200).json({
         success: true,
         status: "success",
@@ -130,6 +142,13 @@ export class BookController {
       const book = await Book.findById(req.params.id);
       if (!book) {
         return res.status(404).json({ success: false, error: "Book not found." });
+      }
+      const authUserId = resolveAuthUserId(req) || DEFAULT_USER_ID;
+      if (book.user_id && book.user_id !== DEFAULT_USER_ID && authUserId !== book.user_id) {
+        return res.status(403).json({
+          success: false,
+          error: "Access denied. You do not have permission to access this textbook."
+        });
       }
       return res.status(200).json({
         success: true,
@@ -148,6 +167,13 @@ export class BookController {
       const book = await Book.findById(bookId);
       if (!book) {
         return res.status(404).json({ success: false, error: "Book not found." });
+      }
+      const authUserId = resolveAuthUserId(req) || DEFAULT_USER_ID;
+      if (book.user_id && book.user_id !== DEFAULT_USER_ID && authUserId !== book.user_id) {
+        return res.status(403).json({
+          success: false,
+          error: "Access denied. You do not have permission to access this textbook."
+        });
       }
       const chunks = await DocumentChunk.findByBookId(bookId);
       return res.status(200).json({

@@ -27,7 +27,7 @@ import { api } from "../services/api";
 
 export const UploadTextbook = () => {
   const { showSuccess, showError, showWarning } = useToast();
-  const { refreshLearningData, activeLanguage } = useLearning();
+  const { refreshLearningData, activeLanguage, setCurrentBook } = useLearning();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
@@ -166,6 +166,9 @@ export const UploadTextbook = () => {
       if (res.summary) setSavedArtifacts(prev => ({ ...prev, existingSummary: res.summary }));
       if (res.quiz) setSavedArtifacts(prev => ({ ...prev, existingQuiz: res.quiz }));
       if (res.learningPlan) setSavedArtifacts(prev => ({ ...prev, existingLearningPlan: res.learningPlan }));
+      if (res.textbook && typeof setCurrentBook === "function") {
+        setCurrentBook(res.textbook);
+      }
 
       refreshLearningData();
       showSuccess(`Textbook processed into ${targetLangObj.name} with ${finalQuestionCount}-question quiz!`);

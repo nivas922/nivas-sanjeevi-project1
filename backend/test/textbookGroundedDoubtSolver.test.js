@@ -264,7 +264,7 @@ async function runTextbookGroundedDoubtSolverTests() {
 
     const resSwitched = await fetch(`${BASE_URL}/ask-doubt`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenA}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenB}` },
       body: JSON.stringify({
         bookId: bookBio.id,
         question: "Explain chlorophyll in thylakoid membranes",

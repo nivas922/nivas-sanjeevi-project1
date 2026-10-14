@@ -183,37 +183,55 @@ async function runPhase5FocusedVerification() {
     assert.strictEqual(dataCase3.error, "Please enter a question.");
     console.log("✔ CASE 3 PASSED: Whitespace-only question rejected with HTTP 400.");
 
-    // CASE 4: Unauthenticated request succeeds directly
-    console.log("\n[CASE 4] Direct unauthenticated request succeeds with 200");
+    // CASE 4: Authenticated owner request succeeds directly
+    console.log("\n[CASE 4] Authenticated book owner request succeeds with 200");
     const resCase4 = await fetch(`${BASE_URL}/ask-doubt`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenA}` },
       body: JSON.stringify({ bookId: bookA.id, question: "What is TCP?" })
     });
     assert.strictEqual(resCase4.status, 200);
-    console.log("✔ CASE 4 PASSED: Direct unauthenticated request succeeded with HTTP 200.");
+    console.log("✔ CASE 4 PASSED: Authenticated request succeeded with HTTP 200.");
 
-    // CASE 5: Permissive auth handling
-    console.log("\n[CASE 5] Permissive handling with arbitrary token succeeds with 200");
+    // CASE 5: Public demo book request succeeds directly without login
+    console.log("\n[CASE 5] Default demo book accessible without authentication");
+    const bookDemo = await Book.create({
+      id: "book_p5_demo_" + Date.now(),
+      user_id: "usr_default",
+      file_url: "/uploads/demo.pdf",
+      title: "Demo Computing",
+      subject: "Computer Science",
+      extracted_text: "TCP is a core networking protocol."
+    });
+    await DocumentChunk.create({
+      id: "chk_p5_demo_" + Date.now(),
+      book_id: bookDemo.id,
+      chapter: "Chapter 1",
+      section: "1.1",
+      page_start: 1,
+      page_end: 2,
+      chunk_index: 0,
+      text: "TCP protocol provides reliable data streams."
+    });
     const resCase5 = await fetch(`${BASE_URL}/ask-doubt`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer bogus-invalid-jwt-token" },
-      body: JSON.stringify({ bookId: bookA.id, question: "What is TCP?" })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookId: bookDemo.id, question: "What is TCP?" })
     });
     assert.strictEqual(resCase5.status, 200);
-    console.log("✔ CASE 5 PASSED: Permissive request succeeded with HTTP 200.");
+    console.log("✔ CASE 5 PASSED: Default demo book accessible without authentication.");
 
-    // CASE 6: Open textbook doubt solving without cross-user restriction
-    console.log("\n[CASE 6] User can query any textbook without 403 Forbidden");
+    // CASE 6: Book belonging to another user cannot be accessed (403)
+    console.log("\n[CASE 6] User cannot query another user's private textbook (403 Forbidden)");
     const resCase6 = await fetch(`${BASE_URL}/ask-doubt`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenB}` },
       body: JSON.stringify({ bookId: bookA.id, question: "What is TCP?" })
     });
     const dataCase6 = await resCase6.json();
-    assert.strictEqual(resCase6.status, 200);
-    assert.strictEqual(dataCase6.success, true);
-    console.log("✔ CASE 6 PASSED: Textbook doubt query succeeded with HTTP 200 without ownership check.");
+    assert.strictEqual(resCase6.status, 403);
+    assert.strictEqual(dataCase6.success, false);
+    console.log("✔ CASE 6 PASSED: Unauthorized cross-user textbook access blocked with HTTP 403.");
 
     // CASE 7: Retrieval is isolated by bookId
     console.log("\n[CASE 7] Document retrieval query is strictly scoped by bookId");

@@ -15,16 +15,27 @@ export const LearningProvider = ({ children }) => {
   const [activeQuiz, setActiveQuiz] = useState(null);
 
   const refreshLearningData = async () => {
-    setTextbooks(storageService.getTextbooks());
+    const localBooks = storageService.getTextbooks();
+    setTextbooks(localBooks);
     setSummaries(storageService.getSummaries());
     setQuizzes(storageService.getQuizzes());
 
     try {
-      const recs = await api.getRecommendations();
-      if (Array.isArray(recs)) {
-        setRecommendations(recs);
+      const [recsResult, booksResult] = await Promise.allSettled([
+        api.getRecommendations(),
+        api.getTextbooks()
+      ]);
+
+      if (recsResult.status === "fulfilled" && Array.isArray(recsResult.value)) {
+        setRecommendations(recsResult.value);
       } else {
         setRecommendations([]);
+      }
+
+      if (booksResult.status === "fulfilled" && Array.isArray(booksResult.value)) {
+        const serverBooks = booksResult.value;
+        setTextbooks(serverBooks);
+        storageService.setAllTextbooks(serverBooks);
       }
     } catch {
       setRecommendations([]);

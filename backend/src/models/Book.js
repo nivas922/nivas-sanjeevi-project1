@@ -21,7 +21,10 @@ export class Book {
   }
 
   static async findById(id) {
-    const row = await dbGet("SELECT * FROM books WHERE id = ?", [id]);
+    if (!id || typeof id !== "string") return null;
+    const trimmedId = id.trim();
+    if (trimmedId.length === 0) return null;
+    const row = await dbGet("SELECT * FROM books WHERE id = ?", [trimmedId]);
     return this.format(row);
   }
 

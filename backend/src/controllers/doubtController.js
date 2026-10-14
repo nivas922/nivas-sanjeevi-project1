@@ -6,27 +6,39 @@ import { isLanguageSupported, SUPPORTED_LANGUAGES } from "../config/languageConf
 export class DoubtController {
   // POST /ask-doubt
   static async askDoubt(req, res, next) {
+    const correlationId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
     try {
       const body = req.body || {};
-      const targetBookId = body.bookId || body.book_id;
-      const question = body.question;
-      const targetLang = typeof body.language === "string" ? body.language : (typeof body.target_language === "string" ? body.target_language : (req.user?.preferred_language || "en"));
+      const rawBookId = body.bookId !== undefined ? body.bookId : body.book_id;
+      const targetBookId = typeof rawBookId === "string" ? rawBookId.trim() : (rawBookId ? String(rawBookId) : null);
+      const question = typeof body.question === "string" ? body.question.trim() : "";
+      const targetLang = typeof body.language === "string" ? body.language.trim() : (typeof body.target_language === "string" ? body.target_language.trim() : (req.user?.preferred_language || "en"));
 
-      if (!targetBookId || typeof targetBookId !== "string" || targetBookId.trim().length === 0) {
+      const idType = typeof rawBookId;
+      const truncatedId = typeof targetBookId === "string" && targetBookId.length > 0
+        ? (targetBookId.length > 12 ? `${targetBookId.slice(0, 12)}...` : targetBookId)
+        : "none";
+
+      console.log(`[AI-Tutor-Diagnostics] [${correlationId}] Request received: hasBookId=${Boolean(targetBookId)}, bookIdType=${idType}, truncatedId=${truncatedId}`);
+
+      if (!targetBookId || targetBookId.length === 0) {
+        console.log(`[AI-Tutor-Diagnostics] [${correlationId}] Validation failure: bookId is required. Status: 400`);
         return res.status(400).json({
           success: false,
           error: "bookId is required."
         });
       }
 
-      if (!question || typeof question !== "string" || question.trim().length === 0) {
+      if (!question || question.length === 0) {
+        console.log(`[AI-Tutor-Diagnostics] [${correlationId}] Validation failure: question is required. Status: 400`);
         return res.status(400).json({
           success: false,
           error: "Please enter a question."
         });
       }
 
-      if (question.trim().length > 1000) {
+      if (question.length > 1000) {
+        console.log(`[AI-Tutor-Diagnostics] [${correlationId}] Validation failure: question exceeds 1000 chars. Status: 400`);
         return res.status(400).json({
           success: false,
           error: "Question is too long (maximum 1000 characters)."
@@ -34,6 +46,7 @@ export class DoubtController {
       }
 
       if (targetLang && !isLanguageSupported(targetLang)) {
+        console.log(`[AI-Tutor-Diagnostics] [${correlationId}] Validation failure: unsupported language. Status: 400`);
         return res.status(400).json({
           success: false,
           error: `Unsupported language: '${targetLang}'. Supported languages are: ${Object.keys(SUPPORTED_LANGUAGES).join(", ")}.`
@@ -47,6 +60,7 @@ export class DoubtController {
         : [];
 
       if (conversationHistory.length > 20) {
+        console.log(`[AI-Tutor-Diagnostics] [${correlationId}] Validation failure: history too long. Status: 400`);
         return res.status(400).json({
           success: false,
           error: "Conversation history is too long (maximum 20 messages)."
@@ -57,20 +71,22 @@ export class DoubtController {
 
       const result = await AiTutorService.answerDoubt({
         bookId: targetBookId,
-        question: question.trim(),
+        question: question,
         userId: currentUserId,
         targetLanguage: targetLang,
-        conversationHistory
+        conversationHistory,
+        correlationId
       });
 
       // Log activity
       await ActivityLog.create({
         user_id: currentUserId,
         activity_type: "doubt",
-        title: `Asked AI Tutor: ${question.trim().slice(0, 40)}`,
+        title: `Asked AI Tutor: ${question.slice(0, 40)}`,
         reference_id: targetBookId
       });
 
+      console.log(`[AI-Tutor-Diagnostics] [${correlationId}] Doubt successfully answered. Status: 200`);
       return res.status(200).json({
         success: true,
         status: "success",
@@ -78,6 +94,8 @@ export class DoubtController {
         ...result
       });
     } catch (error) {
+      const statusCode = error.statusCode || error.status || 500;
+      console.log(`[AI-Tutor-Diagnostics] [${correlationId}] Request failed with status: ${statusCode}. Error: ${error.message}`);
       next(error);
     }
   }

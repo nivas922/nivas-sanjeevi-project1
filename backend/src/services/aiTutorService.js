@@ -3,13 +3,19 @@ import { Book } from "../models/Book.js";
 import { DoubtRetrievalService } from "./doubtRetrievalService.js";
 import { AiSummaryService } from "./aiSummaryService.js";
 import { getLanguageConfig } from "../config/languageConfig.js";
+import { DEFAULT_USER_ID } from "../middleware/auth.js";
 
 export class AiTutorService {
   /**
    * Primary backend service to answer student doubts using uploaded textbook chunks
    */
-  static async answerDoubt({ bookId, question, userId, targetLanguage = "en", conversationHistory = [] }) {
-    console.log(`[AI-Tutor-Service] Solving doubt for bookId '${bookId}' (User: ${userId}): "${question}"`);
+  static async answerDoubt({ bookId, question, userId, targetLanguage = "en", conversationHistory = [], correlationId = null }) {
+    const trimmedBookId = typeof bookId === "string" ? bookId.trim() : (bookId ? String(bookId) : null);
+    const truncatedId = typeof trimmedBookId === "string" && trimmedBookId.length > 0
+      ? (trimmedBookId.length > 12 ? `${trimmedBookId.slice(0, 12)}...` : trimmedBookId)
+      : "unknown";
+
+    console.log(`[AI-Tutor-Diagnostics] [${correlationId || "service"}] Processing doubt: bookId=${truncatedId}, user=${userId || "default"}`);
 
     const apiKey = env.GEMINI_API_KEY;
     if (!apiKey && (env.NODE_ENV !== "test" || process.env.NODE_ENV !== "test")) {
@@ -18,17 +24,30 @@ export class AiTutorService {
       throw err;
     }
 
-    if (!bookId || typeof bookId !== "string" || bookId.trim().length === 0) {
+    if (!trimmedBookId || trimmedBookId.length === 0) {
       const err = new Error("bookId is required.");
       err.statusCode = 400;
       throw err;
     }
 
-    // 1. Verify Book existence
-    const book = await Book.findById(bookId);
+    // 1. Verify Book existence in SQLite database
+    const book = await Book.findById(trimmedBookId);
+    console.log(`[AI-Tutor-Diagnostics] [${correlationId || "service"}] Book lookup: model=Book, table=books, db=learnai.db, truncatedId=${truncatedId}, found=${Boolean(book)}`);
+
     if (!book) {
       const err = new Error("Textbook not found.");
       err.statusCode = 404;
+      throw err;
+    }
+
+    // 1b. Check User Authorization / Ownership
+    // Default demo books (user_id === DEFAULT_USER_ID) are accessible to all users.
+    // User-uploaded books with specific user_id are only accessible by that user.
+    const effectiveUserId = userId || DEFAULT_USER_ID;
+    if (book.user_id && book.user_id !== DEFAULT_USER_ID && effectiveUserId !== book.user_id) {
+      console.log(`[AI-Tutor-Diagnostics] [${correlationId || "service"}] Access denied: book belongs to another user. Status: 403`);
+      const err = new Error("Access denied. You do not have permission to access this textbook.");
+      err.statusCode = 403;
       throw err;
     }
 

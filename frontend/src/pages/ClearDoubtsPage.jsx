@@ -28,28 +28,40 @@ import { Button } from "../components/common/Button";
 
 export const ClearDoubtsPage = () => {
   const { user } = useAuth();
-  const { activeLanguage, textbooks, currentBook } = useLearning();
+  const { activeLanguage, textbooks, currentBook, setCurrentBook } = useLearning();
   const { showSuccess, showInfo, showWarning } = useToast();
   const location = useLocation();
 
+  const searchParams = new URLSearchParams(location.search);
+  const queryBookId = searchParams.get("bookId");
+  const queryQuestion = searchParams.get("question");
+
   const [selectedLanguage, setSelectedLanguage] = useState(activeLanguage || "en");
   const [selectedBookId, setSelectedBookId] = useState(
-    location.state?.bookId || currentBook?.id || (textbooks && textbooks.length === 1 ? textbooks[0].id : "")
+    location.state?.bookId || queryBookId || currentBook?.id || ""
   );
-  const [inputQuery, setInputQuery] = useState("");
+  const [inputQuery, setInputQuery] = useState(queryQuestion || "");
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [speakingId, setSpeakingId] = useState(null);
 
   useEffect(() => {
-    if (location.state?.bookId && location.state.bookId !== selectedBookId) {
-      handleSelectBook(location.state.bookId);
+    const params = new URLSearchParams(location.search);
+    const urlBookId = location.state?.bookId || params.get("bookId");
+    const urlQuestion = params.get("question");
+
+    if (urlBookId && urlBookId !== selectedBookId) {
+      handleSelectBook(urlBookId);
     } else if (!selectedBookId && currentBook?.id) {
-      setSelectedBookId(currentBook.id);
+      handleSelectBook(currentBook.id);
     } else if (!selectedBookId && textbooks && textbooks.length === 1) {
-      setSelectedBookId(textbooks[0].id);
+      handleSelectBook(textbooks[0].id);
     }
-  }, [location.state?.bookId, currentBook, textbooks]);
+
+    if (urlQuestion && !inputQuery) {
+      setInputQuery(urlQuestion);
+    }
+  }, [location.state?.bookId, location.search, currentBook, textbooks]);
 
   const messagesEndRef = useRef(null);
 
@@ -79,6 +91,10 @@ Select a textbook from the dropdown above to start.`,
     setSelectedBookId(newBookId);
 
     const targetBook = textbooks?.find((b) => b.id === newBookId);
+    if (targetBook && typeof setCurrentBook === "function") {
+      setCurrentBook(targetBook);
+    }
+
     setMessages([
       {
         id: `welcome-${Date.now()}`,
@@ -229,16 +245,17 @@ Select a textbook from the dropdown above to start.`,
 
         {/* Textbook & Language selector bar */}
         <div className="flex flex-wrap items-center gap-2 bg-white/10 p-2.5 rounded-2xl backdrop-blur-md border border-white/15">
-          {textbooks && textbooks.length > 0 && (
+          {textbooks && textbooks.length > 0 ? (
             <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-xl border border-white/20">
               <BookOpen className="w-4 h-4 text-white" />
               <select
+                id="doubt-textbook-select"
                 value={selectedBookId}
                 onChange={(e) => handleSelectBook(e.target.value)}
-                className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer max-w-[180px] truncate"
+                className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer max-w-[200px] truncate"
               >
                 <option value="" className="text-slate-900 font-semibold">
-                  -- Select Textbook --
+                  -- Select Uploaded Textbook --
                 </option>
                 {textbooks.map((b) => (
                   <option key={b.id} value={b.id} className="text-slate-900 font-semibold">
@@ -246,6 +263,11 @@ Select a textbook from the dropdown above to start.`,
                   </option>
                 ))}
               </select>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-xl border border-white/15 text-white/70 text-xs">
+              <BookOpen className="w-4 h-4" />
+              <span>No textbooks found</span>
             </div>
           )}
 

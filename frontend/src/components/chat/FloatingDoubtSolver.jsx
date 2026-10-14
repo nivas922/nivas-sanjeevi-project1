@@ -29,7 +29,7 @@ export const FloatingDoubtSolver = () => {
   const [selectedLanguage, setSelectedLanguage] = useState("en");
 
   const { user } = useAuth();
-  const { activeLanguage, textbooks, currentBook } = useLearning();
+  const { activeLanguage, textbooks, currentBook, setCurrentBook } = useLearning();
   const { showSuccess } = useToast();
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
@@ -184,6 +184,10 @@ export const FloatingDoubtSolver = () => {
                   onChange={(e) => {
                     const newBookId = e.target.value;
                     setSelectedBookId(newBookId);
+                    const target = textbooks?.find((b) => b.id === newBookId);
+                    if (target && typeof setCurrentBook === "function") {
+                      setCurrentBook(target);
+                    }
                     speechService.stop();
                     setSpeakingId(null);
                     setMessages([
@@ -224,7 +228,7 @@ export const FloatingDoubtSolver = () => {
               <button
                 onClick={() => {
                   setIsOpen(false);
-                  navigate("/doubts");
+                  navigate("/doubts", { state: { bookId: selectedBookId } });
                 }}
                 className="p-1.5 text-white/80 hover:text-white rounded-lg hover:bg-white/10"
                 title="Expand to Full Page"
