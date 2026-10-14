@@ -38,11 +38,8 @@ export class AdaptiveLearningService {
    */
   static async getTopicPerformance(userId, bookId = null) {
     let quizzes = await Quiz.findByUserId(userId || "usr_default");
-    if ((!quizzes || quizzes.length === 0) && (!userId || userId === "usr_default")) {
-      quizzes = await Quiz.findAll();
-    }
     if (bookId) {
-      quizzes = quizzes.filter((q) => q.book_id === bookId || q.bookId === bookId);
+      quizzes = (quizzes || []).filter((q) => q.book_id === bookId || q.bookId === bookId);
     }
 
     if (!quizzes || quizzes.length === 0) {
@@ -521,11 +518,8 @@ export class AdaptiveLearningService {
    */
   static async calculateProgressOverTime(userId, bookId = null) {
     let quizzes = await Quiz.findByUserId(userId || "usr_default");
-    if ((!quizzes || quizzes.length === 0) && (!userId || userId === "usr_default")) {
-      quizzes = await Quiz.findAll();
-    }
     if (bookId) {
-      quizzes = quizzes.filter((q) => q.book_id === bookId || q.bookId === bookId);
+      quizzes = (quizzes || []).filter((q) => q.book_id === bookId || q.bookId === bookId);
     }
 
     const submitted = (quizzes || [])
@@ -593,7 +587,84 @@ export class AdaptiveLearningService {
   }
 
   /**
-   * 6. Generate Ordered Personalized Learning Path
+   * 6a. Generate Curriculum Chapter-Level Learning Path (Legacy & Regression Support)
+   */
+  static async generateLearningPath(userId, bookId = null) {
+    let targetBookId = bookId;
+    if (!targetBookId) {
+      const latestBook = await Book.findLatestByUserId(userId);
+      if (latestBook) targetBookId = latestBook.id;
+    }
+
+    if (!targetBookId) return [];
+
+    const chunks = await DocumentChunk.findByBookId(targetBookId);
+    if (!chunks || chunks.length === 0) return [];
+
+    const topicPerf = await this.getTopicPerformance(userId, targetBookId);
+
+    // Group unique chapters preserving document order
+    const chaptersMap = new Map();
+    for (const c of chunks) {
+      const chapName = c.chapter || "Chapter 1";
+      if (!chaptersMap.has(chapName)) {
+        chaptersMap.set(chapName, {
+          chapter: chapName,
+          pageStart: c.pageStart || 1,
+          pageEnd: c.pageEnd || 1,
+          sections: new Set()
+        });
+      }
+      const entry = chaptersMap.get(chapName);
+      if (c.section) entry.sections.add(c.section);
+      if (c.pageEnd && c.pageEnd > entry.pageEnd) entry.pageEnd = c.pageEnd;
+    }
+
+    const learningPath = [];
+    const chapterEntries = Array.from(chaptersMap.values());
+
+    chapterEntries.forEach((c, idx) => {
+      let status = "upcoming";
+      let action = "Review Notes";
+      let recommendedDifficulty = "Intermediate";
+
+      const matchedTopic = topicPerf.find(
+        (t) =>
+          t.topic.toLowerCase().includes(c.chapter.toLowerCase()) ||
+          c.chapter.toLowerCase().includes(t.topic.toLowerCase())
+      );
+
+      if (matchedTopic) {
+        if (matchedTopic.classification === "strong" || matchedTopic.learningState === "mastered") {
+          status = "completed";
+          action = "Practice Advanced";
+          recommendedDifficulty = "Advanced";
+        } else {
+          status = "in_progress";
+          action = "Take Diagnostic Quiz";
+          recommendedDifficulty = matchedTopic.recommendedDifficulty;
+        }
+      } else if (idx === 0) {
+        status = "in_progress";
+        action = "Take Starter Quiz";
+      }
+
+      learningPath.push({
+        step: idx + 1,
+        chapter: c.chapter,
+        sectionsCount: c.sections.size || 1,
+        pages: `${c.pageStart}-${c.pageEnd}`,
+        status,
+        action,
+        recommendedDifficulty
+      });
+    });
+
+    return learningPath;
+  }
+
+  /**
+   * 6b. Generate Ordered Personalized Learning Path
    * Translates performance analysis into an ordered, actionable 5-step study plan.
    */
   static async generateOrderedLearningPath(userId, bookId = null, topicPerformance = []) {
@@ -603,6 +674,89 @@ export class AdaptiveLearningService {
       if (latestBook) {
         targetBookId = latestBook.id;
       }
+    }
+
+    // If no topic performance evidence exists yet, build a provisional study path from the textbook's real chapters
+    if (!topicPerformance || topicPerformance.length === 0) {
+      if (targetBookId) {
+        const book = await Book.findById(targetBookId);
+        const chunks = await DocumentChunk.findByBookId(targetBookId);
+        const rawChapters = Array.from(new Set((chunks || []).map((c) => c.chapter).filter(Boolean)));
+        const primaryTopic = rawChapters[0] || book?.subject || book?.title || "Core Concepts";
+        const secondaryTopic = rawChapters[1] || rawChapters[0] || "Foundational Principles";
+        const bookTitle = book?.title || "Selected Textbook";
+
+        return [
+          {
+            step: 1,
+            title: `Review Core Fundamentals: ${primaryTopic}`,
+            topic: primaryTopic,
+            reason: `Begin by mastering foundational concepts from '${bookTitle}' to build a solid base.`,
+            currentPerformance: "Pending Initial Quiz",
+            suggestedActivity: "Read the textbook summary and focus on core definitions.",
+            estimatedEffort: "10-15 mins",
+            actionText: "Review Summary",
+            actionType: "summary",
+            bookId: targetBookId,
+            priority: "High"
+          },
+          {
+            step: 2,
+            title: `Study Key Applications: ${secondaryTopic}`,
+            topic: secondaryTopic,
+            reason: `Deepen your conceptual understanding of ${secondaryTopic} with simplified notes.`,
+            currentPerformance: "Pending Initial Quiz",
+            suggestedActivity: "Ask AI Tutor targeted questions or study concise chapter notes.",
+            estimatedEffort: "8-10 mins",
+            actionText: "Clear Doubts",
+            actionType: "doubts",
+            bookId: targetBookId,
+            priority: "Medium"
+          },
+          {
+            step: 3,
+            title: `Complete Diagnostic Starter Quiz on ${primaryTopic}`,
+            topic: primaryTopic,
+            reason: "Take an initial diagnostic quiz to establish your baseline topic accuracies.",
+            currentPerformance: "Diagnostic Baseline",
+            suggestedActivity: "Complete a 5-question adaptive quiz on Intermediate difficulty.",
+            estimatedEffort: "8-10 mins",
+            actionText: "Take a Quiz",
+            actionType: "quiz",
+            difficulty: "Intermediate",
+            bookId: targetBookId,
+            priority: "High"
+          },
+          {
+            step: 4,
+            title: "Evaluate Performance & Review Mistakes",
+            topic: "Adaptive Review",
+            reason: "Analyze quiz results, address repeated mistakes, and reinforce weak areas.",
+            currentPerformance: "Pending Diagnostic",
+            suggestedActivity: "Review explanations for missed questions and re-test.",
+            estimatedEffort: "5-8 mins",
+            actionText: "Take a Quiz",
+            actionType: "quiz",
+            bookId: targetBookId,
+            priority: "Medium"
+          },
+          {
+            step: 5,
+            title: "Comprehensive Mastery Challenge",
+            topic: `${primaryTopic} Advanced`,
+            reason: `Advance toward confirmed mastery across all chapters in '${bookTitle}'.`,
+            currentPerformance: "Goal: Confirmed Mastery (≥80%)",
+            suggestedActivity: "Solve Advanced-level questions and explore complex real-world scenarios.",
+            estimatedEffort: "12-15 mins",
+            actionText: "Practise Advanced",
+            actionType: "quiz",
+            difficulty: "Advanced",
+            bookId: targetBookId,
+            priority: "Low"
+          }
+        ];
+      }
+      return [];
     }
 
     const weakList = topicPerformance.filter((t) => t.classification === "needs_improvement" || t.learningState === "needs_revision");
@@ -717,25 +871,31 @@ export class AdaptiveLearningService {
       });
     }
 
-    return steps;
+    // Re-index steps cleanly 1..N
+    return steps.map((s, idx) => ({ ...s, step: idx + 1 }));
   }
 
   /**
    * 7. Synthesize AI Personalized Learning Insights using Gemini with Deterministic Fallbacks
+   * Completely subject-agnostic: strictly references actual topic evidence and avoids hallucinating plant subjects.
    */
   static async generateAiLearningInsights({ userId, bookId, topicPerformance, progressOverTime }) {
     if (!topicPerformance || topicPerformance.length === 0) {
       return null;
     }
 
-    // Check cache
-    const cacheKey = `${userId || "default"}_${bookId || "all"}_${topicPerformance.length}_${progressOverTime.latestScore || 0}`;
+    // Signature-based cache key guaranteeing user and book isolation without cross-subject pollution
+    const topicSignature = topicPerformance
+      .map((t) => `${t.topic}:${t.accuracy}:${t.totalQuestions}:${t.classification}`)
+      .sort()
+      .join("|");
+    const cacheKey = `insights_${userId || "default"}_${bookId || "all"}_${topicSignature}_${progressOverTime.latestScore || 0}_v2`;
     const cached = aiInsightsCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < 15 * 60 * 1000) {
       return cached.data;
     }
 
-    // Deterministic fallback generator
+    // Deterministic fallback generator strictly derived from actual topic names
     const generateFallback = (isError = false) => {
       const weak = topicPerformance.filter((t) => t.classification === "needs_improvement");
       const inProg = topicPerformance.filter((t) => t.classification === "in_progress");
@@ -781,9 +941,11 @@ export class AdaptiveLearningService {
         mistakesCount: t.mistakes?.length || 0
       }));
 
-      const prompt = `You are an educational AI tutor analyzing student quiz data.
+      const prompt = `You are an educational AI tutor analyzing student quiz data across diverse academic subjects.
+The curriculum subject may be Computer Science, Mathematics, Physics, Chemistry, Biology, History, Languages, or another field.
 Based strictly on the calculated performance data below, generate an encouraging, personalized study plan.
-Do NOT invent numbers or fabricate mastery that isn't supported by the data.
+Do NOT invent subjects, topics, or numbers not present in the data. Every recommendation must cite the actual supplied topics.
+Do NOT hallucinate plant or biology concepts unless they explicitly appear in the student data.
 
 Student Topic Performance Data:
 ${JSON.stringify(promptData, null, 2)}
@@ -791,16 +953,32 @@ Overall Progress Direction: ${progressOverTime.direction} (${progressOverTime.me
 
 Return ONLY a valid JSON object matching this schema:
 {
-  "summary": "1-2 sentence overall learning diagnosis based on the real data...",
-  "gapAnalysis": "Short description of specific areas needing revision or 'No critical gaps' if all strong...",
-  "studyStrategy": ["Step 1 recommendation...", "Step 2 recommendation...", "Step 3 recommendation..."],
+  "summary": "1-2 sentence overall learning diagnosis based strictly on the real data...",
+  "gapAnalysis": "Short description of specific areas needing revision referencing actual topic names, or 'No critical gaps' if all strong...",
+  "studyStrategy": ["Step 1 recommendation referencing real topics...", "Step 2 recommendation...", "Step 3 recommendation..."],
   "encouragingNote": "Inspiring closing encouragement..."
 }`;
 
       const raw = await AiSummaryService.callGeminiApiWithRetry(prompt, { timeoutMs: 12000, maxRetries: 2 });
       const parsed = AiSummaryService.parseJsonFromGemini(raw);
 
-      if (parsed && parsed.summary && Array.isArray(parsed.studyStrategy)) {
+      if (
+        parsed &&
+        typeof parsed.summary === "string" &&
+        parsed.summary.trim().length > 10 &&
+        Array.isArray(parsed.studyStrategy) &&
+        parsed.studyStrategy.length >= 2
+      ) {
+        // Validation: verify no hallucinated plant topics if subject is non-plant
+        const hasPlantData = topicPerformance.some((t) => /plant|photosynthesis|botany|chloroplast/i.test(t.topic));
+        const mentionsPlants = /photosynthesis|plant cell|chloroplast/i.test(
+          `${parsed.summary} ${parsed.gapAnalysis} ${parsed.studyStrategy.join(" ")}`
+        );
+        if (!hasPlantData && mentionsPlants) {
+          console.warn("[AdaptiveLearningService] Hallucinated plant topics detected in Gemini response for non-plant subject. Falling back to deterministic analysis.");
+          return generateFallback(false);
+        }
+
         const result = {
           isAiGenerated: true,
           isFallback: false,
@@ -822,14 +1000,64 @@ Return ONLY a valid JSON object matching this schema:
 
   /**
    * 8. Full Adaptive Learning Dashboard Endpoint Helper
+   * Supports any textbook subject, validates extracted content, and handles insufficient history gracefully.
    */
   static async getAdaptiveDashboard(userId, bookId = null) {
+    let book = null;
+    let chunks = [];
+
     if (bookId) {
-      const book = await Book.findById(bookId);
+      book = await Book.findById(bookId);
       if (!book) {
         const err = new Error("Textbook not found.");
         err.statusCode = 404;
         throw err;
+      }
+
+      chunks = await DocumentChunk.findByBookId(bookId);
+      const hasUsableContent = Boolean(
+        (book.extractedText && book.extractedText.trim().length > 0) ||
+        (chunks && chunks.length > 0)
+      );
+
+      // Handle empty or unextractable text document gracefully
+      if (!hasUsableContent) {
+        return {
+          emptyDocument: true,
+          emptyDocumentMessage: "This textbook contains no usable extracted text. Please upload a text-based PDF or document to generate recommendations.",
+          overview: {
+            strongTopicsCount: 0,
+            inProgressTopicsCount: 0,
+            needsImprovementTopicsCount: 0,
+            overallProgress: 0,
+            totalAnsweredQuestions: 0,
+            totalQuizzesTaken: 0,
+            hasSufficientHistory: false
+          },
+          overallProgress: 0,
+          totalQuizzesTaken: 0,
+          totalSummariesGenerated: 0,
+          topicPerformance: [],
+          strongestTopics: [],
+          inProgressTopics: [],
+          needsImprovementTopics: [],
+          weakTopics: [],
+          strongTopics: [],
+          improvingTopics: [],
+          masteredTopics: [],
+          recommendations: [],
+          recommendedDifficulty: "Intermediate",
+          learningPath: [],
+          orderedLearningPath: [],
+          progressOverTime: {
+            direction: "not_enough_data",
+            delta: 0,
+            message: "No usable text available in this document.",
+            history: []
+          },
+          aiInsights: null,
+          insufficientHistory: true
+        };
       }
     }
 
@@ -848,6 +1076,7 @@ Return ONLY a valid JSON object matching this schema:
 
     const recommendations = await this.generatePersonalizedRecommendations(userId, bookId);
     const recommendedDifficulty = await this.getRecommendedDifficulty(userId, null, bookId);
+    const chapterLearningPath = await this.generateLearningPath(userId, bookId);
     const orderedLearningPath = await this.generateOrderedLearningPath(userId, bookId, topicPerformance);
     const progressAggregate = await Progress.getAggregateForUser(userId);
 
@@ -875,6 +1104,29 @@ Return ONLY a valid JSON object matching this schema:
       hasSufficientHistory: topicPerformance.length > 0
     };
 
+    // If there is insufficient quiz history for this textbook, derive provisional suggestions from its chapters
+    let provisionalSuggestions = [];
+    if (topicPerformance.length === 0 && (book || bookId)) {
+      const targetBook = book || (await Book.findById(bookId));
+      if (targetBook) {
+        const bookChunks = chunks.length > 0 ? chunks : await DocumentChunk.findByBookId(targetBook.id);
+        const rawChapters = Array.from(new Set((bookChunks || []).map((c) => c.chapter).filter(Boolean)));
+        const sampleTopics = rawChapters.length > 0 ? rawChapters.slice(0, 4) : [targetBook.subject || targetBook.title];
+
+        provisionalSuggestions = sampleTopics.map((top) => ({
+          topic: top,
+          subject: targetBook.subject || targetBook.title,
+          reason: `No quiz attempts recorded yet for '${top}'. Take an initial diagnostic quiz to build your adaptive learning profile.`,
+          recommendedDifficulty: "Intermediate",
+          estimatedMinutes: 8,
+          actionType: "quiz",
+          bookId: targetBook.id,
+          badge: "Diagnostic Recommended",
+          isProvisional: true
+        }));
+      }
+    }
+
     return {
       overview,
       overallProgress,
@@ -890,9 +1142,15 @@ Return ONLY a valid JSON object matching this schema:
       improvingTopics,
       masteredTopics,
       recommendations,
+      provisionalSuggestions,
+      isProvisional: topicPerformance.length === 0,
+      provisionalMessage: topicPerformance.length === 0
+        ? "No quiz history for this textbook yet. Below are provisional study recommendations based on chapters extracted from this book. Complete quizzes to unlock confirmed mastery tracking."
+        : null,
       recommendedDifficulty,
-      learningPath: orderedLearningPath,
+      learningPath: (topicPerformance.length === 0 && chapterLearningPath.length > 0) ? chapterLearningPath : orderedLearningPath,
       orderedLearningPath,
+      chapterLearningPath,
       progressOverTime,
       aiInsights,
       insufficientHistory: topicPerformance.length === 0

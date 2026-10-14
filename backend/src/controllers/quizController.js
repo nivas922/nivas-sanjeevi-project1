@@ -182,11 +182,11 @@ export class QuizController {
         answers: reviewedAnswers
       });
 
-      // Get associated subject
-      let subjectName = "Computer Science & Engineering";
+      // Get associated subject and topic
+      let subjectName = "General Studies";
       if (quiz.book_id) {
         const book = await Book.findById(quiz.book_id);
-        if (book) subjectName = book.subject;
+        if (book) subjectName = book.subject || book.title;
       }
 
       const currentUserId = resolveAuthUserId(req) || DEFAULT_USER_ID;
@@ -202,6 +202,9 @@ export class QuizController {
         reference_id: quiz.id
       });
 
+      const primaryTopic = questions[0]?.topic || subjectName;
+      const targetRecommendationTopic = percentage < 65 ? primaryTopic : `${primaryTopic} Advanced Applications`;
+
       return res.status(200).json({
         success: true,
         status: "success",
@@ -213,7 +216,7 @@ export class QuizController {
         performanceLevel,
         reviewedAnswers,
         answers: reviewedAnswers,
-        recommendedTopic: percentage < 65 ? subjectName : "Advanced System Applications",
+        recommendedTopic: targetRecommendationTopic,
         recommendationDifficulty: percentage < 50 ? "Beginner" : percentage < 75 ? "Intermediate" : "Advanced"
       });
     } catch (error) {

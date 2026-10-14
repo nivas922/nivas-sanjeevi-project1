@@ -752,5 +752,22 @@ export const api = {
       subjectProgress: subjects,
       quizHistory: []
     };
+  },
+
+  async getTextbooks() {
+    try {
+      const res = await fetch(`${API_BASE_URL}/books`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.books)) {
+          return data.books;
+        }
+      }
+    } catch (err) {
+      console.warn("getTextbooks API notice:", err.message);
+    }
+    return storageService.getTextbooks();
   }
 };
