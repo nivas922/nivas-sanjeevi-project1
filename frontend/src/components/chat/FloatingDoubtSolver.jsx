@@ -97,12 +97,21 @@ export const FloatingDoubtSolver = () => {
     setLoading(true);
 
     try {
-      const res = await aiTutorService.askDoubt(query, selectedLanguage, selectedBookId);
+      const history = messages
+        .filter((m) => m.id !== "init-1" && !m.id.startsWith("init-"))
+        .slice(-4)
+        .map((m) => ({
+          role: m.sender === "user" ? "user" : "assistant",
+          text: m.text
+        }));
+      const res = await aiTutorService.askDoubt(query, selectedLanguage, selectedBookId, history);
       const aiMsg = {
         id: `ai-${Date.now()}`,
         sender: "ai",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         text: res.answer,
+        source: res.sources || res.source || [],
+        insufficientEvidence: res.insufficientEvidence,
         relatedTopics: res.relatedTopics
       };
       setMessages((prev) => [...prev, aiMsg]);
@@ -172,7 +181,20 @@ export const FloatingDoubtSolver = () => {
               {textbooks && textbooks.length > 0 && (
                 <select
                   value={selectedBookId}
-                  onChange={(e) => setSelectedBookId(e.target.value)}
+                  onChange={(e) => {
+                    const newBookId = e.target.value;
+                    setSelectedBookId(newBookId);
+                    speechService.stop();
+                    setSpeakingId(null);
+                    setMessages([
+                      {
+                        id: `init-${Date.now()}`,
+                        sender: "ai",
+                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        text: "📚 Textbook context updated. Ask me any doubt grounded in this book!"
+                      }
+                    ]);
+                  }}
                   className="bg-white/20 text-white text-[11px] font-bold px-2 py-1 rounded-lg focus:outline-none cursor-pointer max-w-[110px] truncate"
                   title="Select Textbook"
                 >

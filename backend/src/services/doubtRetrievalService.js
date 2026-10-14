@@ -43,41 +43,66 @@ export class DoubtRetrievalService {
     if (effectiveTokens.length === 0) {
       return {
         chunks: [],
-        hasRelevantContent: false
+        hasRelevantContent: false,
+        insufficientEvidence: true,
+        confidence: "none",
+        topScore: 0
       };
     }
 
     // 3. Score chunks based on keyword frequencies & metadata relevance
     const scoredChunks = [];
+    const RELEVANCE_THRESHOLD = 3;
 
     for (const chunk of allChunks) {
       let score = 0;
       const textLower = (chunk.text || "").toLowerCase();
       const chapLower = (chunk.chapter || "").toLowerCase();
       const secLower = (chunk.section || "").toLowerCase();
+      let matchedDistinctTokens = 0;
 
       for (const token of effectiveTokens) {
+        const escaped = escapeRegExp(token);
         // Exact token occurrences in text
-        const regex = new RegExp(`\\b${escapeRegExp(token)}\\b`, "gi");
+        const regex = new RegExp(`\\b${escaped}\\b`, "gi");
         const occurrences = (textLower.match(regex) || []).length;
-        score += occurrences * 3;
 
-        // Word-boundary prefix match (e.g. "connect" matching "connection", min 4 chars to avoid false positives like "ack" in "packets")
+        let tokenMatched = false;
+        if (occurrences > 0) {
+          score += occurrences * 3;
+          tokenMatched = true;
+        }
+
+        // Word-boundary prefix match (min 4 chars to avoid false positives)
         if (occurrences === 0 && token.length >= 4) {
-          const prefixRegex = new RegExp(`\\b${escapeRegExp(token)}`, "gi");
+          const prefixRegex = new RegExp(`\\b${escaped}`, "gi");
           const prefixOccurrences = (textLower.match(prefixRegex) || []).length;
-          score += prefixOccurrences * 1;
+          if (prefixOccurrences > 0) {
+            score += prefixOccurrences * 1;
+            tokenMatched = true;
+          }
         }
 
         // Chapter / Section title match bonus
-        const titleRegex = new RegExp(`\\b${escapeRegExp(token)}\\b`, "gi");
+        const titleRegex = new RegExp(`\\b${escaped}\\b`, "gi");
         if (titleRegex.test(chapLower) || titleRegex.test(secLower)) {
           score += 5;
+          tokenMatched = true;
+        }
+
+        if (tokenMatched) {
+          matchedDistinctTokens++;
         }
       }
 
-      if (score > 0) {
-        scoredChunks.push({ chunk, score });
+      // Multi-term coverage bonus: if a chunk matches multiple query tokens, boost significantly
+      if (effectiveTokens.length > 1 && matchedDistinctTokens > 1) {
+        const coverageRatio = matchedDistinctTokens / effectiveTokens.length;
+        score += Math.round(coverageRatio * 8);
+      }
+
+      if (score >= RELEVANCE_THRESHOLD) {
+        scoredChunks.push({ chunk, score, matchedDistinctTokens });
       }
     }
 
@@ -89,14 +114,32 @@ export class DoubtRetrievalService {
     );
 
     if (scoredChunks.length === 0) {
-      return { chunks: [], hasRelevantContent: false };
+      return {
+        chunks: [],
+        hasRelevantContent: false,
+        insufficientEvidence: true,
+        confidence: "none",
+        topScore: 0
+      };
+    }
+
+    const topScore = scoredChunks[0].score;
+    const topCoverage = scoredChunks[0].matchedDistinctTokens / effectiveTokens.length;
+    let confidence = "low";
+    if (topScore >= 12 && topCoverage >= 0.5) {
+      confidence = "high";
+    } else if (topScore >= 6) {
+      confidence = "medium";
     }
 
     const selectedChunks = scoredChunks.slice(0, topK).map((sc) => sc.chunk);
 
     return {
       chunks: selectedChunks,
-      hasRelevantContent: true
+      hasRelevantContent: true,
+      insufficientEvidence: false,
+      confidence,
+      topScore
     };
   }
 }

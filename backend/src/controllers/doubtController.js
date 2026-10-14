@@ -40,13 +40,27 @@ export class DoubtController {
         });
       }
 
+      const conversationHistory = Array.isArray(body.conversationHistory)
+        ? body.conversationHistory
+        : Array.isArray(body.history)
+        ? body.history
+        : [];
+
+      if (conversationHistory.length > 20) {
+        return res.status(400).json({
+          success: false,
+          error: "Conversation history is too long (maximum 20 messages)."
+        });
+      }
+
       const currentUserId = resolveAuthUserId(req) || DEFAULT_USER_ID;
 
       const result = await AiTutorService.answerDoubt({
         bookId: targetBookId,
         question: question.trim(),
         userId: currentUserId,
-        targetLanguage: targetLang
+        targetLanguage: targetLang,
+        conversationHistory
       });
 
       // Log activity

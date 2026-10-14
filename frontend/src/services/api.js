@@ -586,7 +586,7 @@ export const api = {
   },
 
   // Real AI Academic Doubt Solver
-  async askDoubt({ bookId, question, language = "en" }) {
+  async askDoubt({ bookId, question, language = "en", conversationHistory = [] }) {
     try {
       const res = await fetch(`${API_BASE_URL}/ask-doubt`, {
         method: "POST",
@@ -594,7 +594,8 @@ export const api = {
         body: JSON.stringify({
           bookId,
           question,
-          language
+          language,
+          conversationHistory
         })
       });
       return await handleApiResponse(res);

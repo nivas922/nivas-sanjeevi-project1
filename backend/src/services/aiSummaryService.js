@@ -1022,7 +1022,11 @@ Return ONLY a valid JSON object:
         answer: "The uploaded textbook does not contain enough information to answer this question confidently.",
         keyPoints: ["Information not present in uploaded textbook"],
         example: null,
-        source: []
+        confidence: "none",
+        insufficientEvidence: true,
+        followUpSuggestions: [],
+        source: [],
+        sources: []
       });
     }
 
@@ -1046,7 +1050,14 @@ Return ONLY a valid JSON object:
         `Detailed explanation from ${sources[0]?.section || 'section'}`
       ],
       example: `Example illustrating ${question} in ${bookTitle}`,
-      source: sources
+      confidence: "high",
+      insufficientEvidence: false,
+      followUpSuggestions: [
+        `How does this relate to other topics in ${sources[0]?.chapter || 'the textbook'}?`,
+        `Can you provide practical applications of ${question}?`
+      ],
+      source: sources,
+      sources: sources
     });
   }
 

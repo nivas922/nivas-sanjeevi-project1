@@ -4,7 +4,7 @@ export const aiTutorService = {
   /**
    * Real AI Academic Tutor calling backend POST /api/ask-doubt
    */
-  async askDoubt(question, languageCode = "en", bookId = null) {
+  async askDoubt(question, languageCode = "en", bookId = null, conversationHistory = []) {
     if (!bookId) {
       throw new Error("Please select a textbook before asking a doubt.");
     }
@@ -13,6 +13,10 @@ export const aiTutorService = {
       return {
         answer: "Please ask a question or enter your academic doubt.",
         language: languageCode,
+        insufficientEvidence: true,
+        confidence: "none",
+        sources: [],
+        source: [],
         relatedTopics: ["Explain key concepts", "Formulas & Theorems", "Important Exam Q&A"]
       };
     }
@@ -21,7 +25,8 @@ export const aiTutorService = {
       const data = await api.askDoubt({
         bookId,
         question: question.trim(),
-        language: languageCode
+        language: languageCode,
+        conversationHistory
       });
 
       let formattedAnswer = data.answer || "No response received.";
@@ -32,17 +37,26 @@ export const aiTutorService = {
         formattedAnswer += `\n\n### 💡 Example:\n\`\`\`text\n${data.example}\n\`\`\``;
       }
 
+      const sources = data.sources || data.source || [];
+      const followUpSuggestions = Array.isArray(data.followUpSuggestions) && data.followUpSuggestions.length > 0
+        ? data.followUpSuggestions
+        : [
+            "Explain with an illustrative diagram",
+            "Provide code implementation / key formulas",
+            "What are top exam questions on this topic?"
+          ];
+
       return {
         topic: question.trim().slice(0, 40),
         answer: formattedAnswer,
         language: languageCode,
-        source: data.source || [],
-        hasRelevantContent: data.hasRelevantContent !== false,
-        relatedTopics: [
-          "Explain with an illustrative diagram",
-          "Provide code implementation / key formulas",
-          "What are top exam questions on this topic?"
-        ]
+        source: sources,
+        sources: sources,
+        confidence: data.confidence || "high",
+        insufficientEvidence: Boolean(data.insufficientEvidence),
+        hasRelevantContent: data.hasRelevantContent !== false && !data.insufficientEvidence,
+        followUpSuggestions,
+        relatedTopics: followUpSuggestions
       };
     } catch (err) {
       throw err;

@@ -14,7 +14,8 @@ import {
   BookOpen,
   HelpCircle,
   Download,
-  Flame
+  Flame,
+  AlertCircle
 } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -41,8 +42,8 @@ export const ClearDoubtsPage = () => {
   const [speakingId, setSpeakingId] = useState(null);
 
   useEffect(() => {
-    if (location.state?.bookId) {
-      setSelectedBookId(location.state.bookId);
+    if (location.state?.bookId && location.state.bookId !== selectedBookId) {
+      handleSelectBook(location.state.bookId);
     } else if (!selectedBookId && currentBook?.id) {
       setSelectedBookId(currentBook.id);
     } else if (!selectedBookId && textbooks && textbooks.length === 1) {
@@ -70,6 +71,34 @@ Select a textbook from the dropdown above to start.`,
       ]
     }
   ]);
+
+  const handleSelectBook = (newBookId) => {
+    if (newBookId === selectedBookId) return;
+    speechService.stop();
+    setSpeakingId(null);
+    setSelectedBookId(newBookId);
+
+    const targetBook = textbooks?.find((b) => b.id === newBookId);
+    setMessages([
+      {
+        id: `welcome-${Date.now()}`,
+        sender: "ai",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        text: newBookId
+          ? `📚 Switched to textbook: **${targetBook?.title || "Selected Textbook"}**.\n\nAll subsequent questions will be retrieved strictly from this book's passages with exact chapter and page citations.`
+          : `👋 Please select a textbook from the dropdown above to start asking doubts.`,
+        relatedTopics: [
+          `Explain key concepts in ${targetBook?.title || "this book"}`,
+          "Summarize the main formulas and definitions",
+          "What are top exam questions from this book?"
+        ]
+      }
+    ]);
+
+    if (newBookId) {
+      showInfo(`Active textbook switched to "${targetBook?.title || "selected book"}". Previous chat context cleared.`);
+    }
+  };
 
   const quickPrompts = [
     { title: "📖 Key Concepts", prompt: "Explain the core concepts covered in this textbook chapter-by-chapter." },
@@ -106,15 +135,28 @@ Select a textbook from the dropdown above to start.`,
     setLoading(true);
 
     try {
-      const response = await aiTutorService.askDoubt(textToSend, selectedLanguage, selectedBookId);
+      // Gather minimum necessary conversation history for continuity
+      const historyForBackend = messages
+        .filter((m) => !m.id.startsWith("welcome-"))
+        .slice(-4)
+        .map((m) => ({
+          role: m.sender === "user" ? "user" : "assistant",
+          text: m.text
+        }));
+
+      const response = await aiTutorService.askDoubt(textToSend, selectedLanguage, selectedBookId, historyForBackend);
       const aiResponse = {
         id: `ai-${Date.now()}`,
         sender: "ai",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         text: response.answer,
         topic: response.topic,
-        source: response.source || [],
-        relatedTopics: response.relatedTopics
+        source: response.sources || response.source || [],
+        sources: response.sources || response.source || [],
+        confidence: response.confidence,
+        insufficientEvidence: Boolean(response.insufficientEvidence),
+        hasRelevantContent: response.hasRelevantContent,
+        relatedTopics: response.followUpSuggestions || response.relatedTopics || []
       };
       setMessages((prev) => [...prev, aiResponse]);
     } catch (err) {
@@ -192,7 +234,7 @@ Select a textbook from the dropdown above to start.`,
               <BookOpen className="w-4 h-4 text-white" />
               <select
                 value={selectedBookId}
-                onChange={(e) => setSelectedBookId(e.target.value)}
+                onChange={(e) => handleSelectBook(e.target.value)}
                 className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer max-w-[180px] truncate"
               >
                 <option value="" className="text-slate-900 font-semibold">
@@ -342,18 +384,48 @@ Select a textbook from the dropdown above to start.`,
                     </div>
                   )}
 
+                  {/* Insufficient Evidence Warning Notice */}
+                  {!isUser && msg.insufficientEvidence && (
+                    <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs flex items-start gap-2.5">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <span className="font-bold">Textbook Grounding Notice:</span>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">
+                          The selected textbook does not contain sufficient passages to answer this doubt. LearnAI will not invent answers outside the textbook.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Source Traceability Badges */}
-                  {!isUser && msg.source && msg.source.length > 0 && (
-                    <div className="pt-2 border-t border-slate-200/60 text-xs">
-                      <span className="font-bold text-slate-500 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                        <BookOpen className="w-3.5 h-3.5 text-brand-600" />
-                        Textbook Source Traceability:
-                      </span>
+                  {!isUser && msg.source && msg.source.length > 0 && !msg.insufficientEvidence && (
+                    <div className="pt-2 border-t border-slate-200/60 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                          <BookOpen className="w-3.5 h-3.5 text-brand-600" />
+                          Textbook Source Citations:
+                        </span>
+                        {msg.confidence && (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                            msg.confidence === "high" ? "bg-emerald-100 text-emerald-800" :
+                            msg.confidence === "medium" ? "bg-sky-100 text-sky-800" :
+                            "bg-slate-200 text-slate-700"
+                          }`}>
+                            {msg.confidence} confidence
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-1.5">
                         {msg.source.map((s, idx) => (
-                          <span key={idx} className="bg-brand-50 text-brand-700 font-semibold px-2.5 py-1 rounded-lg border border-brand-200 text-[11px]">
-                            {s.chapter || 'Overview'} • {s.section || 'General'} (Pages {s.pageStart}-{s.pageEnd})
-                          </span>
+                          <div key={idx} className="bg-brand-50/80 hover:bg-brand-100 text-brand-800 font-semibold px-2.5 py-1 rounded-xl border border-brand-200/80 text-[11px] flex items-center gap-1.5 transition-colors">
+                            <span className="font-bold">{s.chapter || 'Overview'}</span>
+                            <span className="text-brand-400">•</span>
+                            <span>{s.section || 'General'}</span>
+                            <span className="text-brand-400">•</span>
+                            <span className="font-mono text-[10px] bg-brand-200/60 text-brand-900 px-1.5 py-0.5 rounded">
+                              p. {s.pageStart}{s.pageEnd && s.pageEnd !== s.pageStart ? `-${s.pageEnd}` : ''}
+                            </span>
+                          </div>
                         ))}
                       </div>
                     </div>
