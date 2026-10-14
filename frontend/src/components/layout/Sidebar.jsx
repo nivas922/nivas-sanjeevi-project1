@@ -30,11 +30,12 @@ export const Sidebar = ({ isOpen, onClose }) => {
     { label: "AI Quiz", path: "/quiz", icon: HelpCircle },
     { label: "Clear Doubts (AI Tutor)", path: "/doubts", icon: MessageSquareQuote, highlight: true },
     {
-      label: "AI Recommendations",
+      label: "Learning Analytics",
       path: "/recommendations",
       icon: Sparkles,
       badge: recommendations?.length > 0 ? recommendations.length : null
     },
+
     { label: "Settings", path: "/settings", icon: Settings },
   ];
 

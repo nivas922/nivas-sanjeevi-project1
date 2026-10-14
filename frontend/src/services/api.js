@@ -651,6 +651,33 @@ export const api = {
     return [];
   },
 
+  async getLearningAnalytics(bookId = null) {
+    const user = storageService.getUser();
+    const userId = user?.id || "usr_default";
+    try {
+      const query = bookId ? `?bookId=${encodeURIComponent(bookId)}` : "";
+      const res = await fetch(`${API_BASE_URL}/adaptive-learning/analytics/${userId}${query}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+      // Fallback to /adaptive-learning if needed
+      const fallbackRes = await fetch(`${API_BASE_URL}/adaptive-learning${query}`, {
+        headers: getAuthHeaders()
+      });
+      if (fallbackRes.ok) {
+        return await fallbackRes.json();
+      }
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Failed to fetch learning analytics.");
+    } catch (err) {
+      console.warn("Learning analytics API notice:", err.message);
+      throw err;
+    }
+  },
+
+
   async getAdaptiveLearning(bookId = null) {
     try {
       const path = bookId ? `/adaptive-learning/${encodeURIComponent(bookId)}` : `/adaptive-learning`;

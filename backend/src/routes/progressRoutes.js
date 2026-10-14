@@ -11,8 +11,14 @@ router.get("/progress/:user_id", ProgressController.getProgress);
 router.get("/activity", ProgressController.getActivity);
 router.get("/activity/:user_id", ProgressController.getActivity);
 
+// GET /adaptive-learning/analytics & GET /adaptive-learning/analytics/:user_id
+router.get("/adaptive-learning/analytics", ProgressController.getLearningAnalytics);
+router.get("/adaptive-learning/analytics/:user_id", ProgressController.getLearningAnalytics);
+
 // GET /adaptive-learning & GET /adaptive-learning/:bookId
 router.get("/adaptive-learning", ProgressController.getAdaptiveLearning);
 router.get("/adaptive-learning/:bookId", ProgressController.getAdaptiveLearning);
 
 export default router;
+
+
