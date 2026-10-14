@@ -5,7 +5,13 @@ import { storageService } from "../../frontend/src/services/storageService.js";
 import { AiSummaryService } from "../src/services/aiSummaryService.js";
 import { Book } from "../src/models/Book.js";
 import { DocumentChunk } from "../src/models/DocumentChunk.js";
+import { Summary } from "../src/models/Summary.js";
+import { SummaryController } from "../src/controllers/summaryController.js";
+import { initDb } from "../src/config/db.js";
 import { env } from "../src/config/env.js";
+
+env.NODE_ENV = "test";
+process.env.NODE_ENV = "test";
 
 // Mock localStorage for Node.js test environment
 if (typeof globalThis.localStorage === "undefined") {
@@ -308,6 +314,129 @@ async function runRegressionTests() {
       env.GEMINI_API_KEY = originalApiKey;
       AiSummaryService.resetModelCache();
     }
+
+    // -----------------------------------------------------------------------------------
+    // TEST 5: Backend Summary Reuse on Retry Prevents Redundant Gemini Calls
+    // -----------------------------------------------------------------------------------
+    console.log("[TEST 5] Verify SummaryController reuses existing completed summary from database");
+    await initDb();
+
+    const testReuseBookId = "book-reuse-step5-" + Date.now();
+    await Book.create({
+      id: testReuseBookId,
+      user_id: "usr_default",
+      file_url: "/uploads/test-reuse.pdf",
+      title: "Test Reuse Book",
+      subject: "Testing",
+      extracted_text: "Text for reuse testing"
+    });
+
+    const preExistingSummary = await Summary.create({
+      book_id: testReuseBookId,
+      user_id: "usr_default",
+      language: "en",
+      summary_text: "Existing verified summary text",
+      key_concepts: ["Concept X"],
+      definitions: [{ term: "Term X", meaning: "Meaning X" }]
+    });
+
+    let mockReq = {
+      body: { book_id: testReuseBookId, target_language: "en" }
+    };
+    let mockResJson = null;
+    let mockResStatus = null;
+    let mockRes = {
+      status: (code) => {
+        mockResStatus = code;
+        return {
+          json: (data) => { mockResJson = data; }
+        };
+      }
+    };
+
+    await SummaryController.summarize(mockReq, mockRes, () => {});
+    assert.strictEqual(mockResStatus, 200, "Must return HTTP 200 on summary reuse");
+    assert.strictEqual(mockResJson.summary_id, preExistingSummary.id, "Must return existing summary ID");
+    assert.ok(mockResJson.message.includes("existing record"), "Must indicate reuse from existing record");
+
+    const allSummariesForBook = await Summary.findByBookId(testReuseBookId);
+    assert.strictEqual(allSummariesForBook.length, 1, "Must NOT create a duplicate summary record in SQLite");
+    console.log("✔ TEST 5 PASSED: Backend cleanly reused existing summary without duplicating.\n");
+
+    // -----------------------------------------------------------------------------------
+    // TEST 6: Background Job Status Polling Endpoint
+    // -----------------------------------------------------------------------------------
+    console.log("[TEST 6] Verify getSummarizeStatus returns completed summary for polling");
+
+    let statusReq = {
+      params: { bookId: testReuseBookId },
+      query: { target_language: "en" }
+    };
+    let statusResJson = null;
+    let statusResCode = null;
+    let statusResObj = {
+      status: (code) => {
+        statusResCode = code;
+        return {
+          json: (data) => { statusResJson = data; }
+        };
+      }
+    };
+
+    await SummaryController.getSummarizeStatus(statusReq, statusResObj, () => {});
+    assert.strictEqual(statusResCode, 200);
+    assert.strictEqual(statusResJson.status, "completed");
+    assert.strictEqual(statusResJson.progress, 100);
+    assert.strictEqual(statusResJson.summary.id, preExistingSummary.id);
+    console.log("✔ TEST 6 PASSED: Status polling correctly returned completed summary.\n");
+
+    // -----------------------------------------------------------------------------------
+    // TEST 7: Multi-Chunk Bounded Summarization (15 chunks)
+    // -----------------------------------------------------------------------------------
+    console.log("[TEST 7] Verify 15-chunk document completes via bounded section summarization");
+
+    const testMultiChunkBookId = "book-multi-step5-" + Date.now();
+    await Book.create({
+      id: testMultiChunkBookId,
+      user_id: "usr_default",
+      file_url: "/uploads/test-multichunk.pdf",
+      title: "Multi Chunk Architecture",
+      subject: "Computer Systems",
+      extracted_text: "Content for multi chunk architecture"
+    });
+
+    const mockChunks = [];
+    for (let c = 1; c <= 3; c++) {
+      for (let s = 1; s <= 5; s++) {
+        mockChunks.push({
+          id: `chk_multi_${Date.now()}_${c}_${s}`,
+          book_id: testMultiChunkBookId,
+          chapter: `Chapter ${c}: Scalable Systems`,
+          section: `${c}.${s} Component Isolation`,
+          page_start: (c - 1) * 5 + s,
+          page_end: (c - 1) * 5 + s,
+          chunk_index: (c - 1) * 5 + s - 1,
+          text: `Detailed architectural explanation of module ${c}.${s} focusing on fault isolation, scalability, and loose coupling.`
+        });
+      }
+    }
+    assert.strictEqual(mockChunks.length, 15, "15 chunks created");
+    await DocumentChunk.createMany(mockChunks);
+
+    let progressCalls = [];
+    const multiResult = await AiSummaryService.summarizeBookFromChunks({
+      bookId: testMultiChunkBookId,
+      bookTitle: "Multi Chunk Architecture",
+      subject: "Computer Systems",
+      targetLanguage: "en",
+      onProgress: (pct, stage) => progressCalls.push({ pct, stage })
+    });
+
+    assert.ok(multiResult.overallSummary, "Must produce overall summary");
+    assert.ok(multiResult.keyPoints.length > 0, "Must extract key points");
+    assert.ok(multiResult.chapters.length >= 1, "Must contain chapter breakdowns");
+    assert.ok(progressCalls.length > 0, "Progress callbacks must be invoked");
+    console.log("✔ TEST 7 PASSED: 15-chunk document successfully synthesized with bounded sections.\n");
 
     console.log("🎉 ALL STEP 5 REGRESSION TESTS PASSED SUCCESSFULLY!\n");
   } finally {

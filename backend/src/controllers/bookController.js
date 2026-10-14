@@ -28,36 +28,10 @@ export class BookController {
       const formattedTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
       const subject = req.body.subject || formattedTitle;
 
-      // Extract raw text content from file
-      let extractedText;
-      try {
-        extractedText = await StorageService.extractDocumentText(file.path, file.mimetype);
-      } catch (extractError) {
-        if (fs.existsSync(file.path)) {
-          try { fs.unlinkSync(file.path); } catch {}
-        }
-        return res.status(extractError.statusCode || 400).json({
-          success: false,
-          error: extractError.message || "Failed to extract text from document."
-        });
-      }
-
-      // Create book in database
-      const book = await Book.create({
-        user_id: userId,
-        file_url: fileUrl,
-        title: formattedTitle,
-        subject: subject,
-        file_name: file.filename,
-        file_size: file.size,
-        extracted_text: extractedText
-      });
-
-      // Phase 2: Run structured extraction, chapter detection, and text chunking
+      // Single-pass processing: extract text, detect hierarchy, and generate chunks in ONE operation
       let processingResult;
       try {
         processingResult = await StorageService.processAndStoreDocument({
-          bookId: book.id,
           filePath: file.path,
           mimeType: file.mimetype
         });
@@ -65,11 +39,43 @@ export class BookController {
         if (fs.existsSync(file.path)) {
           try { fs.unlinkSync(file.path); } catch {}
         }
-        await Book.deleteById(book.id);
         return res.status(procError.statusCode || 400).json({
           success: false,
           error: procError.message || "Failed to process and chunk document."
         });
+      }
+
+      // Create book in database with the extracted text from the single extraction pass
+      const book = await Book.create({
+        user_id: userId,
+        file_url: fileUrl,
+        title: formattedTitle,
+        subject: subject,
+        file_name: file.filename,
+        file_size: file.size,
+        extracted_text: processingResult.fullText
+      });
+
+      // Persist structured chunks referencing the newly created book
+      if (Array.isArray(processingResult.chunks) && processingResult.chunks.length > 0) {
+        try {
+          await DocumentChunk.createMany(
+            processingResult.chunks.map((c) => ({
+              ...c,
+              book_id: book.id,
+              bookId: book.id
+            }))
+          );
+        } catch (chunkError) {
+          await Book.deleteById(book.id);
+          if (fs.existsSync(file.path)) {
+            try { fs.unlinkSync(file.path); } catch {}
+          }
+          return res.status(500).json({
+            success: false,
+            error: "Failed to persist document chunks."
+          });
+        }
       }
 
       // Update progress: increment books studied count for this subject

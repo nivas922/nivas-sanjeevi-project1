@@ -276,12 +276,58 @@ export const api = {
         }, summarizeTimeoutMs);
         sumData = await handleApiResponse(sumRes);
       } catch (err) {
-        if (err.name === "AbortError" || err.message?.toLowerCase().includes("timed out") || err.message?.toLowerCase().includes("timeout")) {
-          const timeoutErr = new Error("AI summarization took longer than expected. Please click 'Retry Processing' to resume.");
-          timeoutErr.status = 504;
-          throw timeoutErr;
+        const isTimeout =
+          err.name === "AbortError" ||
+          err.message?.toLowerCase().includes("timed out") ||
+          err.message?.toLowerCase().includes("timeout");
+
+        if (isTimeout) {
+          // Resilient check: see if background job completed or is actively processing
+          try {
+            const statusRes = await fetchWithTimeout(
+              `${API_BASE_URL}/summarize/status/${bookId}?target_language=${langCode}`,
+              { headers: getAuthHeaders() },
+              8000
+            );
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              if (statusData.status === "completed" && statusData.summary) {
+                sumData = { success: true, summary: statusData.summary };
+              } else if (statusData.status === "processing") {
+                let pollAttempts = 0;
+                while (pollAttempts < 12) {
+                  await sleep(2500);
+                  pollAttempts++;
+                  const pollRes = await fetch(
+                    `${API_BASE_URL}/summarize/status/${bookId}?target_language=${langCode}`,
+                    { headers: getAuthHeaders() }
+                  );
+                  if (pollRes.ok) {
+                    const pollData = await pollRes.json();
+                    if (pollData.status === "completed" && pollData.summary) {
+                      sumData = { success: true, summary: pollData.summary };
+                      break;
+                    }
+                    if (pollData.status === "failed") {
+                      throw new Error(pollData.error || "Summarization job failed on server.");
+                    }
+                  }
+                }
+              }
+            }
+          } catch (pollErr) {
+            console.warn("[Summarize-Polling] Polling notice:", pollErr.message);
+          }
         }
-        handleNetworkError(err);
+
+        if (!sumData) {
+          if (isTimeout) {
+            const timeoutErr = new Error("AI summarization took longer than expected. Please click 'Retry Processing' to resume.");
+            timeoutErr.status = 504;
+            throw timeoutErr;
+          }
+          handleNetworkError(err);
+        }
       }
 
       if (!sumData || !sumData.summary) {

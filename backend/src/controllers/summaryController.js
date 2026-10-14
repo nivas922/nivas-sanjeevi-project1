@@ -5,6 +5,7 @@ import { ActivityLog } from "../models/ActivityLog.js";
 import { AiService } from "../services/aiService.js";
 import { TtsService } from "../services/ttsService.js";
 import { TranslationService } from "../services/translationService.js";
+import { summarizationJobService } from "../services/summarizationJobService.js";
 import { isLanguageSupported, SUPPORTED_LANGUAGES } from "../config/languageConfig.js";
 import { DEFAULT_USER_ID, resolveAuthUserId, resolveAuthUser } from "../middleware/auth.js";
 
@@ -38,67 +39,160 @@ export class SummaryController {
         return res.status(404).json({ success: false, error: "Book not found with provided ID." });
       }
 
-      // Generate full-document AI summary via Phase 3 Gemini Pipeline
-      const aiResult = await AiService.generateSummary({
-        bookId: book.id,
-        bookTitle: book.title,
-        subject: book.subject,
-        text: book.extractedText || "",
-        targetLanguage
-      });
+      // 1. Reuse existing completed summary if already generated for this book and language
+      const existingSummaries = await Summary.findByBookId(book.id);
+      const existingSummary = existingSummaries.find(
+        (s) => s.language === targetLanguage
+      );
 
-      // Synthesize audio preview for TTS integration
-      const ttsResult = await TtsService.synthesizeSpeech({
-        text: aiResult.summaryText,
-        language: targetLanguage
-      });
+      if (existingSummary) {
+        console.log(`[Summary-Controller] Reusing existing completed summary for book '${book.id}' (${targetLanguage})`);
+        return res.status(200).json({
+          success: true,
+          status: "success",
+          message: "Summary retrieved successfully from existing record.",
+          summary_id: existingSummary.id,
+          summaryId: existingSummary.id,
+          language: targetLanguage,
+          summary: {
+            ...existingSummary,
+            bookTitle: book.title,
+            topic: book.title,
+            audioUrl: existingSummary.audio_url || existingSummary.audioUrl
+          }
+        });
+      }
 
-      // Combine quickRevision array with chapter breakdown metadata
-      const quickRevisionPayload = {
-        revisionPoints: aiResult.quickRevision || [],
-        chapters: aiResult.chapters || []
-      };
+      // 2. Run summarization job with in-flight deduplication and progress tracking
+      const job = summarizationJobService.createOrGetJob(book.id, targetLanguage, async (updateProgress) => {
+        updateProgress(20, "Generating hierarchical summaries");
+        const aiResult = await AiService.generateSummary({
+          bookId: book.id,
+          bookTitle: book.title,
+          subject: book.subject,
+          text: "",
+          targetLanguage
+        });
 
-      // Save summary to database
-      const summary = await Summary.create({
-        book_id: book.id,
-        user_id: currentUserId,
-        language: targetLanguage,
-        summary_text: aiResult.summaryText,
-        key_concepts: aiResult.keyPoints || [],
-        definitions: aiResult.definitions || [],
-        formulas: aiResult.formulas || [],
-        examples: aiResult.examples || [],
-        quick_revision: quickRevisionPayload,
-        audio_url: ttsResult.audioUrl
-      });
+        updateProgress(85, "Synthesizing multilingual audio");
+        const ttsResult = await TtsService.synthesizeSpeech({
+          text: aiResult.summaryText,
+          language: targetLanguage
+        });
 
+        const quickRevisionPayload = {
+          revisionPoints: aiResult.quickRevision || [],
+          chapters: aiResult.chapters || []
+        };
 
-      // Update progress for user & subject
-      await Progress.incrementSummaryCount(currentUserId, book.subject);
+        updateProgress(95, "Persisting summary to database");
+        const summary = await Summary.create({
+          book_id: book.id,
+          user_id: currentUserId,
+          language: targetLanguage,
+          summary_text: aiResult.summaryText,
+          key_concepts: aiResult.keyPoints || [],
+          definitions: aiResult.definitions || [],
+          formulas: aiResult.formulas || [],
+          examples: aiResult.examples || [],
+          quick_revision: quickRevisionPayload,
+          audio_url: ttsResult.audioUrl
+        });
 
-      // Log activity
-      await ActivityLog.create({
-        user_id: currentUserId,
-        activity_type: "summary",
-        title: `Generated Summary for '${book.title}' (${targetLanguage.toUpperCase()})`,
-        reference_id: summary.id
-      });
+        await Progress.incrementSummaryCount(currentUserId, book.subject);
 
-      return res.status(200).json({
-        success: true,
-        status: "success",
-        message: "Summary generated successfully.",
-        summary_id: summary.id,
-        summaryId: summary.id,
-        language: targetLanguage,
-        summary: {
+        await ActivityLog.create({
+          user_id: currentUserId,
+          activity_type: "summary",
+          title: `Generated Summary for '${book.title}' (${targetLanguage.toUpperCase()})`,
+          reference_id: summary.id
+        });
+
+        return {
           ...summary,
           bookTitle: book.title,
           topic: book.title,
           simpleExplanation: aiResult.simpleExplanation,
           audioUrl: ttsResult.audioUrl
+        };
+      });
+
+      const summaryResult = await job.promise;
+
+      return res.status(200).json({
+        success: true,
+        status: "success",
+        message: "Summary generated successfully.",
+        summary_id: summaryResult.id,
+        summaryId: summaryResult.id,
+        language: targetLanguage,
+        summary: summaryResult
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /summarize/status/:bookId and GET /summaries/status/:bookId
+  static async getSummarizeStatus(req, res, next) {
+    try {
+      const { bookId } = req.params;
+      const rawTargetLang = req.query.target_language || req.query.language || "en";
+      const targetLanguage = rawTargetLang.toLowerCase();
+
+      const book = await Book.findById(bookId);
+      if (!book) {
+        return res.status(404).json({ success: false, error: "Book not found." });
+      }
+
+      // Check SQLite database first
+      const existingSummaries = await Summary.findByBookId(book.id);
+      const existing = existingSummaries.find((s) => s.language === targetLanguage);
+      if (existing) {
+        return res.status(200).json({
+          success: true,
+          status: "completed",
+          progress: 100,
+          summary: {
+            ...existing,
+            bookTitle: book.title,
+            topic: book.title,
+            audioUrl: existing.audio_url || existing.audioUrl
+          }
+        });
+      }
+
+      // Check active job queue in memory
+      const job = summarizationJobService.getJob(book.id, targetLanguage);
+      if (job) {
+        if (job.status === "completed" && job.result) {
+          return res.status(200).json({
+            success: true,
+            status: "completed",
+            progress: 100,
+            summary: job.result
+          });
         }
+        if (job.status === "failed") {
+          return res.status(200).json({
+            success: false,
+            status: "failed",
+            progress: job.progress,
+            error: job.error
+          });
+        }
+        return res.status(200).json({
+          success: true,
+          status: "processing",
+          progress: job.progress,
+          stage: job.stage
+        });
+      }
+
+      return res.status(404).json({
+        success: false,
+        status: "not_found",
+        message: "No summarization job in progress or completed for this book."
       });
     } catch (error) {
       next(error);

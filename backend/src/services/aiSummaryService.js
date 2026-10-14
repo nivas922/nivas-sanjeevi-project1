@@ -6,7 +6,41 @@ import { DocumentChunk } from "../models/DocumentChunk.js";
 let activeWorkingModel = null;
 const unsupportedModels = new Set();
 
+// Global sliding-window rate limiter queue for Gemini API calls (strictly <= 14 RPM to respect 15 RPM free-tier limit)
+const geminiRateLimit = {
+  maxRpm: 14,
+  windowMs: 60 * 1000,
+  timestamps: []
+};
+
+async function acquireGeminiRateLimitSlot() {
+  if (process.env.NODE_ENV === "test") {
+    geminiRateLimit.timestamps.push(Date.now());
+    return;
+  }
+  const now = Date.now();
+  geminiRateLimit.timestamps = geminiRateLimit.timestamps.filter((ts) => now - ts < geminiRateLimit.windowMs);
+
+  if (geminiRateLimit.timestamps.length >= geminiRateLimit.maxRpm) {
+    const oldest = geminiRateLimit.timestamps[0];
+    const waitTime = geminiRateLimit.windowMs - (now - oldest) + 150;
+    if (waitTime > 0) {
+      console.log(`[AI-Service] Gemini RPM ceiling reached (${geminiRateLimit.maxRpm}/min). Throttling for ${waitTime}ms...`);
+      await new Promise((res) => setTimeout(res, waitTime));
+      return acquireGeminiRateLimitSlot();
+    }
+  }
+  geminiRateLimit.timestamps.push(Date.now());
+}
+
 export class AiSummaryService {
+  static sanitizeLog(text) {
+    if (!text || typeof text !== "string") return "";
+    return text
+      .replace(/key=([^&\s]+)/gi, "key=[REDACTED]")
+      .replace(/Bearer\s+([A-Za-z0-9_\-\.]+)/gi, "Bearer [REDACTED]");
+  }
+
   /**
    * Exponential backoff retry wrapper for Gemini API calls
    */
@@ -57,8 +91,10 @@ export class AiSummaryService {
       attempt++;
       const currentModel = candidateModels[modelIndex];
       const url = `${aiConfig.gemini.endpoint}/${currentModel}:generateContent?key=${apiKey}`;
+      const callStart = Date.now();
 
       try {
+        await acquireGeminiRateLimitSlot();
         const timeoutMs = options.timeoutMs || 45000;
         const response = await fetch(url, {
           method: "POST",
@@ -97,8 +133,15 @@ export class AiSummaryService {
             err.statusCode = response.status;
             throw err;
           }
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-          delayMs *= 2;
+          const retryAfter = response.headers?.get ? response.headers.get("retry-after") : null;
+          let retryDelayMs = delayMs;
+          if (retryAfter && !isNaN(Number(retryAfter))) {
+            retryDelayMs = Math.max(retryDelayMs, Number(retryAfter) * 1000);
+          } else if (response.status === 429) {
+            retryDelayMs = process.env.NODE_ENV === "test" ? delayMs : Math.max(retryDelayMs, 2500);
+          }
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+          delayMs = Math.min(delayMs * 2, 10000);
           continue;
         }
 
@@ -116,9 +159,13 @@ export class AiSummaryService {
           throw new Error("Gemini returned empty text candidate.");
         }
 
+        const duration = Date.now() - callStart;
+        console.log(`[AI-Summary] Gemini call succeeded in ${duration}ms (model: '${currentModel}')`);
+
         activeWorkingModel = currentModel;
         return geminiText;
       } catch (err) {
+        const duration = Date.now() - callStart;
         const isTimeout =
           err.name === "TimeoutError" ||
           err.name === "AbortError" ||
@@ -127,7 +174,7 @@ export class AiSummaryService {
 
         if ((err.statusCode === 404 || isTimeout) && modelIndex < candidateModels.length - 1) {
           if (isTimeout) {
-            console.warn(`[AI-Service] Gemini model '${currentModel}' timed out. Trying next candidate model...`);
+            console.warn(`[AI-Service] Gemini model '${currentModel}' timed out after ${duration}ms. Trying next candidate model...`);
           }
           modelIndex++;
           attempt = 0;
@@ -139,6 +186,7 @@ export class AiSummaryService {
             timeoutErr.statusCode = 504;
             throw timeoutErr;
           }
+          console.warn(`[AI-Service] Gemini call failed for model '${currentModel}' after ${duration}ms: ${this.sanitizeLog(err.message)}`);
           throw err;
         }
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -420,11 +468,61 @@ Return ONLY a valid JSON object matching this schema:
   }
 
   /**
-   * Main Pipeline Orchestrator:
-   * document_chunks -> Chunk Summaries -> Section Summaries -> Chapter Summaries -> Final Textbook Summary
+   * Directly summarizes a section from its constituent document chunks in ONE call.
+   * Eliminates redundant individual chunk LLM round-trips for multi-chunk sections.
    */
-  static async summarizeBookFromChunks({ bookId, bookTitle, subject, targetLanguage = "en" }) {
-    console.log(`[AI-Summary-Service] Starting full-document Gemini pipeline for book '${bookTitle}' (ID: ${bookId}) in '${targetLanguage}'`);
+  static async summarizeSectionDirectly(sectionName, sectionChunks, targetLanguage = "en") {
+    if (sectionChunks.length === 1) {
+      return this.summarizeChunk(sectionChunks[0], targetLanguage);
+    }
+
+    const pageStart = Math.min(...sectionChunks.map((c) => c.pageStart || c.page_start || 1));
+    const pageEnd = Math.max(...sectionChunks.map((c) => c.pageEnd || c.page_end || 1));
+    const combinedText = sectionChunks.map((c) => c.text).join("\n\n").slice(0, 10000);
+
+    const prompt = `Synthesize a coherent section-level academic summary in language '${targetLanguage}' for section '${sectionName}' (Pages ${pageStart}-${pageEnd}).
+Do NOT invent information.
+
+Text Content:
+${combinedText}
+
+Return ONLY a valid JSON object:
+{
+  "summary": "Coherent section summary",
+  "keyPoints": ["Key point 1", "Key point 2"],
+  "definitions": [{"term": "Term", "meaning": "Meaning"}],
+  "formulas": [{"name": "Formula", "formula": "Expression", "description": "Desc"}],
+  "examples": [{"title": "Example", "code": "Code/Text"}],
+  "examPoints": ["Exam point 1"]
+}`;
+
+    const raw = await this.callGeminiApiWithRetry(prompt);
+    const parsed = this.parseJsonFromGemini(raw);
+
+    return {
+      section: sectionName,
+      pageStart,
+      pageEnd,
+      summary: parsed?.summary || combinedText.slice(0, 500),
+      keyPoints: Array.isArray(parsed?.keyPoints) ? parsed.keyPoints : [],
+      definitions: Array.isArray(parsed?.definitions) ? parsed.definitions : [],
+      formulas: Array.isArray(parsed?.formulas) ? parsed.formulas : [],
+      examples: Array.isArray(parsed?.examples) ? parsed.examples : [],
+      examPoints: Array.isArray(parsed?.examPoints) ? parsed.examPoints : []
+    };
+  }
+
+  /**
+   * Main Pipeline Orchestrator:
+   * document_chunks -> Bounded Section Summaries -> Chapter Summaries -> Final Textbook Summary
+   */
+  static async summarizeBookFromChunks({ bookId, bookTitle, subject, targetLanguage = "en", onProgress }) {
+    const memBefore = process.memoryUsage();
+    console.log(
+      `[AI-Summary-Service] Starting Gemini pipeline for book '${bookTitle}' (ID: ${bookId}) in '${targetLanguage}'. ` +
+      `Initial Heap: ${(memBefore.heapUsed / 1024 / 1024).toFixed(1)}MB, RSS: ${(memBefore.rss / 1024 / 1024).toFixed(1)}MB`
+    );
+    const startTime = Date.now();
 
     const chunks = await DocumentChunk.findByBookId(bookId);
     if (!chunks || chunks.length === 0) {
@@ -433,32 +531,71 @@ Return ONLY a valid JSON object matching this schema:
       throw err;
     }
 
-    // 1. Process Chunk Summaries in controlled sequential batches
-    const chunkSummaries = [];
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkSum = await this.summarizeChunk(chunks[i], targetLanguage);
-      chunkSummaries.push(chunkSum);
+    if (typeof onProgress === "function") onProgress(15, "Grouping document sections");
+
+    // Single-chunk fast-path (1 LLM call total)
+    if (chunks.length === 1) {
+      const chunkSum = await this.summarizeChunk(chunks[0], targetLanguage);
+      const singleChap = await this.summarizeChapter(chunkSum.chapter, [chunkSum], targetLanguage);
+      const finalResult = await this.generateFinalBookSummary(bookTitle, subject, [singleChap], targetLanguage);
+      if (typeof onProgress === "function") onProgress(100, "Textbook summary completed");
+      return finalResult;
     }
 
-    // 2. Group by Chapter & Section
+    // 1. Group raw chunks by Chapter & Section
     const sectionGroups = new Map();
-    for (const cs of chunkSummaries) {
-      const key = `${cs.chapter}::${cs.section}`;
+    for (const chunk of chunks) {
+      const chapter = chunk.chapter || "Chapter 1: Overview";
+      const section = chunk.section || "General Content";
+      const key = `${chapter}::${section}`;
       if (!sectionGroups.has(key)) {
-        sectionGroups.set(key, { chapter: cs.chapter, section: cs.section, chunks: [] });
+        sectionGroups.set(key, { chapter, section, chunks: [] });
       }
-      sectionGroups.get(key).chunks.push(cs);
+      sectionGroups.get(key).chunks.push(chunk);
     }
 
-    // 3. Section-level Summaries
+    let groupsArray = Array.from(sectionGroups.values());
+
+    // For large documents, bound to at most 8 representative section clusters to avoid exceeding Gemini 15 RPM
+    if (groupsArray.length > 8) {
+      console.log(`[AI-Summary-Service] Bounding ${groupsArray.length} sections to 8 representative clusters to maintain rate-limit safety.`);
+      const boundedGroups = [];
+      const step = Math.ceil(groupsArray.length / 8);
+      for (let i = 0; i < groupsArray.length; i += step) {
+        const cluster = groupsArray.slice(i, i + step);
+        const mergedChunks = cluster.flatMap((g) => g.chunks);
+        boundedGroups.push({
+          chapter: cluster[0].chapter,
+          section: cluster[0].section,
+          chunks: mergedChunks
+        });
+      }
+      groupsArray = boundedGroups;
+    }
+
+    if (typeof onProgress === "function") onProgress(30, "Synthesizing section summaries");
+
+    // 2. Process Section Summaries with controlled concurrency (2 parallel requests)
     const sectionSummaries = [];
-    for (const group of sectionGroups.values()) {
-      const secSum = await this.summarizeSection(group.section, group.chunks, targetLanguage);
-      secSum.chapter = group.chapter;
-      sectionSummaries.push(secSum);
+    for (let i = 0; i < groupsArray.length; i += 2) {
+      const batch = groupsArray.slice(i, i + 2);
+      const batchResults = await Promise.all(
+        batch.map(async (group) => {
+          const secSum = await this.summarizeSectionDirectly(group.section, group.chunks, targetLanguage);
+          secSum.chapter = group.chapter;
+          return secSum;
+        })
+      );
+      sectionSummaries.push(...batchResults);
+      if (typeof onProgress === "function") {
+        const pct = 30 + Math.floor((sectionSummaries.length / groupsArray.length) * 45);
+        onProgress(pct, `Synthesized ${sectionSummaries.length}/${groupsArray.length} sections`);
+      }
     }
 
-    // 4. Group by Chapter
+    if (typeof onProgress === "function") onProgress(80, "Aggregating chapter summaries");
+
+    // 3. Group by Chapter
     const chapterGroups = new Map();
     for (const ss of sectionSummaries) {
       if (!chapterGroups.has(ss.chapter)) {
@@ -467,16 +604,27 @@ Return ONLY a valid JSON object matching this schema:
       chapterGroups.get(ss.chapter).push(ss);
     }
 
-    // 5. Chapter-level Summaries
+    // 4. Chapter-level Summaries (collapses 1-section chapters with 0 calls)
     const chapterSummaries = [];
     for (const [chapName, secList] of chapterGroups.entries()) {
       const chapSum = await this.summarizeChapter(chapName, secList, targetLanguage);
       chapterSummaries.push(chapSum);
     }
 
-    // 6. Final Textbook Summary
+    if (typeof onProgress === "function") onProgress(90, "Finalizing textbook summary");
+
+    // 5. Final Textbook Summary (collapses 1-chapter books with 0 calls)
     const finalResult = await this.generateFinalBookSummary(bookTitle, subject, chapterSummaries, targetLanguage);
 
+    const duration = Date.now() - startTime;
+    const memAfter = process.memoryUsage();
+    console.log(
+      `[AI-Summary-Service] Pipeline completed in ${duration}ms for '${bookTitle}'. ` +
+      `Sections: ${sectionSummaries.length}, Chapters: ${chapterSummaries.length}, ` +
+      `Final Heap: ${(memAfter.heapUsed / 1024 / 1024).toFixed(1)}MB, RSS: ${(memAfter.rss / 1024 / 1024).toFixed(1)}MB`
+    );
+
+    if (typeof onProgress === "function") onProgress(100, "Textbook summary completed");
     return finalResult;
   }
 
