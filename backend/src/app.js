@@ -5,6 +5,8 @@ import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
 import { env } from "./config/env.js";
+import { StoragePreflight } from "./config/storagePreflight.js";
+import { dbGet } from "./config/db.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { apiRateLimiter } from "./middleware/rateLimiter.js";
 
@@ -80,10 +82,12 @@ app.use("/uploads", express.static(env.UPLOAD_DIR));
 // Rate limiter for standard requests
 app.use(apiRateLimiter);
 
-// Health check endpoints (Independent of external AI providers)
+// Liveness check endpoints (Container survival probe - independent of external AI providers)
 const healthHandler = (req, res) => {
+  const isMaintenance = process.env.MAINTENANCE_MODE === "true";
   res.status(200).json({
     status: "healthy",
+    mode: isMaintenance ? "maintenance" : "normal",
     service: "LearnAI Backend",
     environment: env.NODE_ENV,
     database: "connected",
@@ -92,6 +96,84 @@ const healthHandler = (req, res) => {
 };
 app.get("/health", healthHandler);
 app.get("/api/health", healthHandler);
+app.get("/live", healthHandler);
+app.get("/api/live", healthHandler);
+
+// Readiness check endpoints (Traffic routing probe - returns 503 during maintenance, preflight failure, or db disconnect)
+const readinessHandler = async (req, res) => {
+  const isMaintenance = process.env.MAINTENANCE_MODE === "true";
+  if (isMaintenance) {
+    res.set("Retry-After", "300");
+    return res.status(503).json({
+      ready: false,
+      mode: "maintenance",
+      message: "LearnAI service is in maintenance mode. Writes are temporarily disabled.",
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Active validation: storage preflight check (fail-closed on failure or thrown exception)
+  try {
+    const preflight = StoragePreflight.validate();
+    if (!preflight || !preflight.ok) {
+      return res.status(503).json({
+        ready: false,
+        status: "unready",
+        error: "Storage validation failed.",
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (preflightErr) {
+    console.error("❌ [Readiness Probe] Storage preflight exception:", preflightErr.message);
+    return res.status(503).json({
+      ready: false,
+      status: "unready",
+      error: "Storage validation failed.",
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Active validation: database responsive check (uses existing singleton connection)
+  try {
+    await dbGet("SELECT 1;");
+  } catch (dbErr) {
+    console.error("❌ [Readiness Probe] Database query failed:", dbErr.message);
+    return res.status(503).json({
+      ready: false,
+      status: "unready",
+      error: "Database is not ready or unresponsive.",
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  return res.status(200).json({
+    ready: true,
+    status: "ready",
+    database: "connected",
+    timestamp: new Date().toISOString()
+  });
+};
+app.get("/ready", readinessHandler);
+app.get("/api/ready", readinessHandler);
+
+// Maintenance Mode Write-Freeze Middleware (Intercepts all mutating requests when MAINTENANCE_MODE=true)
+app.use((req, res, next) => {
+  if (process.env.MAINTENANCE_MODE === "true") {
+    // Allow read-only HTTP methods to proceed
+    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+      return next();
+    }
+    // Reject any mutating HTTP method with HTTP 503 Service Unavailable
+    res.set("Retry-After", "300");
+    return res.status(503).json({
+      success: false,
+      error: "LearnAI is currently in maintenance mode for scheduled database migration. Writes are temporarily disabled.",
+      mode: "maintenance",
+      retryAfter: 300
+    });
+  }
+  next();
+});
 
 // Helper function to mount routes at both root and /api prefixes
 const registerRoutes = (prefix = "") => {

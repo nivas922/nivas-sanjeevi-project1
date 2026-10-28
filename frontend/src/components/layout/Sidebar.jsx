@@ -7,7 +7,6 @@ import {
   FileText,
   Volume2,
   HelpCircle,
-  MessageSquareQuote,
   Sparkles,
   Settings,
   X,
@@ -28,7 +27,6 @@ export const Sidebar = ({ isOpen, onClose }) => {
     { label: "My Summaries", path: "/summaries", icon: FileText },
     { label: "Text to Speech", path: "/tts", icon: Volume2 },
     { label: "AI Quiz", path: "/quiz", icon: HelpCircle },
-    { label: "Clear Doubts (AI Tutor)", path: "/doubts", icon: MessageSquareQuote, highlight: true },
     {
       label: "Learning Analytics",
       path: "/recommendations",

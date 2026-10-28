@@ -17,7 +17,7 @@ import {
   Flame,
   AlertCircle
 } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useLearning } from "../context/LearningContext";
 import { useToast } from "../context/ToastContext";
@@ -25,12 +25,14 @@ import { SUPPORTED_LANGUAGES } from "../data/translations";
 import { aiTutorService } from "../services/aiTutorService";
 import { speechService } from "../services/speechService";
 import { Button } from "../components/common/Button";
+import { VoiceInputButton } from "../components/chat/VoiceInputButton";
 
 export const ClearDoubtsPage = () => {
   const { user } = useAuth();
   const { activeLanguage, textbooks, currentBook, setCurrentBook } = useLearning();
   const { showSuccess, showInfo, showWarning } = useToast();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const searchParams = new URLSearchParams(location.search);
   const queryBookId = searchParams.get("bookId");
@@ -40,7 +42,7 @@ export const ClearDoubtsPage = () => {
   const [selectedBookId, setSelectedBookId] = useState(
     location.state?.bookId || queryBookId || currentBook?.id || ""
   );
-  const [inputQuery, setInputQuery] = useState(queryQuestion || "");
+  const [inputQuery, setInputQuery] = useState(location.state?.question || queryQuestion || "");
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [speakingId, setSpeakingId] = useState(null);
@@ -48,20 +50,29 @@ export const ClearDoubtsPage = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const urlBookId = location.state?.bookId || params.get("bookId");
-    const urlQuestion = params.get("question");
+    const urlQuestion = location.state?.question || params.get("question");
 
+    // 1. If explicit bookId in URL or state, prioritize it
     if (urlBookId && urlBookId !== selectedBookId) {
       handleSelectBook(urlBookId);
-    } else if (!selectedBookId && currentBook?.id) {
+    }
+    // 2. If currentBook is valid within available textbooks, select it
+    else if (!selectedBookId && currentBook?.id && textbooks?.some((b) => b.id === currentBook.id)) {
       handleSelectBook(currentBook.id);
-    } else if (!selectedBookId && textbooks && textbooks.length === 1) {
+    }
+    // 3. If no book selected and exactly one textbook exists, auto-select it
+    else if (!selectedBookId && textbooks && textbooks.length === 1) {
       handleSelectBook(textbooks[0].id);
+    }
+    // 4. If selectedBookId points to a book no longer in available textbooks, clear it
+    else if (selectedBookId && textbooks && textbooks.length > 0 && !textbooks.some((b) => b.id === selectedBookId)) {
+      handleSelectBook(textbooks.length === 1 ? textbooks[0].id : "");
     }
 
     if (urlQuestion && !inputQuery) {
       setInputQuery(urlQuestion);
     }
-  }, [location.state?.bookId, location.search, currentBook, textbooks]);
+  }, [location.state?.bookId, location.search, currentBook, textbooks, selectedBookId]);
 
   const messagesEndRef = useRef(null);
 
@@ -299,6 +310,75 @@ Select a textbook from the dropdown above to start.`,
         </div>
       </div>
 
+      {/* Textbook Status & Selection Banners */}
+      {!selectedBookId && textbooks && textbooks.length > 1 && (
+        <div className="bg-gradient-to-r from-brand-50 to-indigo-50 p-4 sm:p-5 rounded-2xl border border-brand-200/90 shadow-soft-sm space-y-3 animate-in fade-in">
+          <div className="flex items-center gap-2 text-xs font-bold text-brand-900 uppercase tracking-wider">
+            <BookOpen className="w-4 h-4 text-brand-600" />
+            <span>Select a textbook to ask doubts from:</span>
+          </div>
+          <div className="flex flex-wrap gap-2.5">
+            {textbooks.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => handleSelectBook(b.id)}
+                className="px-3.5 py-2.5 rounded-xl text-xs font-bold bg-white hover:bg-brand-600 text-slate-800 hover:text-white border border-slate-200 hover:border-brand-600 transition-all cursor-pointer shadow-soft-xs flex items-center gap-2 group"
+              >
+                <BookOpen className="w-4 h-4 text-brand-600 group-hover:text-white transition-colors" />
+                <span className="font-extrabold">{b.title}</span>
+                {b.subject && (
+                  <span className="text-[10px] opacity-75 font-medium bg-slate-100 group-hover:bg-brand-500 group-hover:text-white px-2 py-0.5 rounded-md transition-colors">
+                    {b.subject}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(!textbooks || textbooks.length === 0) && (
+        <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200/90 text-amber-900 text-xs shadow-soft-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="font-bold text-sm text-amber-950">No Textbooks Available Yet</p>
+              <p className="text-amber-800 text-xs leading-relaxed">
+                LearnAI AI Academic Tutor provides verified, chapter-grounded answers with citations from your uploaded textbooks. Please upload a textbook to start asking doubts.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => navigate("/upload")}
+            className="shrink-0 rounded-xl"
+          >
+            Upload Textbook
+          </Button>
+        </div>
+      )}
+
+      {selectedBookId && (
+        <div className="bg-emerald-50/80 px-4 py-2.5 rounded-2xl border border-emerald-200/80 text-emerald-900 text-xs flex items-center justify-between gap-3 shadow-soft-xs">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-medium text-emerald-800">
+              Active Context: <strong className="font-bold text-emerald-950">{textbooks?.find(b => b.id === selectedBookId)?.title || "Selected Textbook"}</strong>
+            </span>
+            <span className="hidden sm:inline text-[11px] text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-semibold">
+              Strictly Grounded
+            </span>
+          </div>
+          <button
+            onClick={() => handleSelectBook("")}
+            className="text-[11px] font-bold text-emerald-700 hover:text-emerald-950 underline cursor-pointer"
+          >
+            Switch Book
+          </button>
+        </div>
+      )}
+
       {/* Suggested Quick Prompt Chips */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-soft-sm space-y-2.5">
         <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -503,8 +583,15 @@ Select a textbook from the dropdown above to start.`,
               type="text"
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
-              placeholder={`Type your textbook doubt or academic question here (answering in ${SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name})...`}
+              placeholder={`Type or speak your textbook doubt (answering in ${SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguage)?.name || "English"})...`}
               className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-soft-xs"
+            />
+            <VoiceInputButton
+              language={selectedLanguage}
+              currentValue={inputQuery}
+              onTranscriptChange={(text) => setInputQuery(text)}
+              onTranscriptFinal={(finalText) => setInputQuery(finalText)}
+              disabled={loading}
             />
             <Button
               type="submit"

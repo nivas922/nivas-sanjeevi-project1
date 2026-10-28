@@ -65,10 +65,13 @@ export class AiSummaryService {
       throw err;
     }
 
-    const preferredModel = env.GEMINI_MODEL || aiConfig.gemini.model || "gemini-3.5-flash-lite";
+    const preferredModel = env.GEMINI_MODEL || aiConfig.gemini.model || "gemini-2.5-flash";
     const rawCandidates = [
       activeWorkingModel,
       preferredModel,
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
       "gemini-3.5-flash-lite",
       "gemini-3.8-flash"
     ];
@@ -79,7 +82,9 @@ export class AiSummaryService {
 
     if (candidateModels.length === 0) {
       unsupportedModels.clear();
-      candidateModels = Array.from(new Set([preferredModel, "gemini-3.5-flash-lite", "gemini-3.8-flash"].filter(Boolean)));
+      candidateModels = Array.from(
+        new Set([preferredModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash"].filter(Boolean))
+      );
     }
 
     let modelIndex = 0;

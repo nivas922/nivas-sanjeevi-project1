@@ -13,13 +13,14 @@ import {
   Languages,
   Maximize2
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { aiTutorService } from "../../services/aiTutorService";
 import { speechService } from "../../services/speechService";
 import { useAuth } from "../../context/AuthContext";
 import { useLearning } from "../../context/LearningContext";
 import { useToast } from "../../context/ToastContext";
 import { SUPPORTED_LANGUAGES } from "../../data/translations";
+import { VoiceInputButton } from "./VoiceInputButton";
 
 export const FloatingDoubtSolver = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -32,6 +33,7 @@ export const FloatingDoubtSolver = () => {
   const { activeLanguage, textbooks, currentBook, setCurrentBook } = useLearning();
   const { showSuccess } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const messagesEndRef = useRef(null);
 
   const [selectedBookId, setSelectedBookId] = useState(
@@ -45,12 +47,14 @@ export const FloatingDoubtSolver = () => {
   }, [activeLanguage]);
 
   useEffect(() => {
-    if (!selectedBookId && currentBook?.id) {
+    if (!selectedBookId && currentBook?.id && textbooks?.some((b) => b.id === currentBook.id)) {
       setSelectedBookId(currentBook.id);
     } else if (!selectedBookId && textbooks && textbooks.length === 1) {
       setSelectedBookId(textbooks[0].id);
+    } else if (selectedBookId && textbooks && textbooks.length > 0 && !textbooks.some((b) => b.id === selectedBookId)) {
+      setSelectedBookId(textbooks.length === 1 ? textbooks[0].id : "");
     }
-  }, [currentBook, textbooks]);
+  }, [currentBook, textbooks, selectedBookId]);
 
   const [messages, setMessages] = useState([
     {
@@ -79,7 +83,9 @@ export const FloatingDoubtSolver = () => {
         id: `warn-${Date.now()}`,
         sender: "ai",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        text: "⚠️ Please select a textbook from the top dropdown before asking doubts."
+        text: textbooks && textbooks.length > 0
+          ? "⚠️ Please select a textbook from the top dropdown to ask textbook-grounded doubts."
+          : "⚠️ No textbooks found. Please upload a textbook first before asking doubts."
       };
       setMessages((prev) => [...prev, warnMsg]);
       return;
@@ -145,6 +151,11 @@ export const FloatingDoubtSolver = () => {
     });
   };
 
+  // If already on the dedicated /doubts full page, do not render floating tutor to prevent duplicate instances and control overlap
+  if (location.pathname === "/doubts") {
+    return null;
+  }
+
   return (
     <>
       {/* Floating Action Button */}
@@ -164,7 +175,7 @@ export const FloatingDoubtSolver = () => {
 
       {/* Floating Chat Drawer */}
       {isOpen && (
-        <div className="fixed bottom-6 right-6 z-50 w-[92vw] sm:w-[420px] h-[550px] bg-white rounded-3xl border border-slate-200/90 shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200">
+        <div className="fixed bottom-6 right-6 z-50 w-[92vw] sm:w-[420px] h-[550px] max-h-[85vh] bg-white rounded-3xl border border-slate-200/90 shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200">
           {/* Top Bar */}
           <div className="p-3.5 bg-gradient-to-r from-brand-600 to-indigo-700 text-white flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -227,8 +238,10 @@ export const FloatingDoubtSolver = () => {
 
               <button
                 onClick={() => {
+                  speechService.stop();
+                  setSpeakingId(null);
                   setIsOpen(false);
-                  navigate("/doubts", { state: { bookId: selectedBookId } });
+                  navigate("/doubts", { state: { bookId: selectedBookId, question: inputQuery } });
                 }}
                 className="p-1.5 text-white/80 hover:text-white rounded-lg hover:bg-white/10"
                 title="Expand to Full Page"
@@ -301,14 +314,22 @@ export const FloatingDoubtSolver = () => {
               e.preventDefault();
               handleSend();
             }}
-            className="p-3 bg-white border-t border-slate-200/80 flex gap-2"
+            className="p-3 bg-white border-t border-slate-200/80 flex items-center gap-2"
           >
             <input
               type="text"
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
-              placeholder="Ask any doubt..."
+              placeholder="Ask doubt (type or speak)..."
               className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <VoiceInputButton
+              size="sm"
+              language={selectedLanguage}
+              currentValue={inputQuery}
+              onTranscriptChange={(text) => setInputQuery(text)}
+              onTranscriptFinal={(finalText) => setInputQuery(finalText)}
+              disabled={loading}
             />
             <button
               type="submit"

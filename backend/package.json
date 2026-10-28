@@ -5,12 +5,15 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
+    "preflight": "node src/config/storagePreflight.js",
+    "start": "node src/config/storagePreflight.js && node server.js",
     "dev": "node --watch server.js",
     "test": "node test/api.test.js"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.11.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

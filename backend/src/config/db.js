@@ -1,57 +1,271 @@
 import sqlite3 from "sqlite3";
+import { createClient } from "@libsql/client";
 import path from "path";
 import fs from "fs";
 import { env } from "./env.js";
+import { StoragePreflight } from "./storagePreflight.js";
 
-// Ensure data directory exists
-const dbDir = path.dirname(env.DB_FILE);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
+export const isTurso = Boolean(process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN);
+
+// Validate storage configuration before initializing database - fail closed immediately if invalid
+if (!isTurso) {
+  const preflightResult = StoragePreflight.validate();
+  if (!preflightResult.ok) {
+    const errorMsg = `CRITICAL STORAGE PREFLIGHT ERROR: Cannot connect database. ${preflightResult.errors.join("; ")}`;
+    console.error("❌ [Database]", errorMsg);
+    throw new Error(errorMsg);
+  }
 }
 
 const sqlite = sqlite3.verbose();
-export const db = new sqlite.Database(env.DB_FILE, (err) => {
-  if (err) {
-    console.error("❌ Failed to connect to database:", err.message);
-  } else {
-    console.log(" Connected to SQLite database:", env.DB_FILE);
-  }
-});
+export const localDb = !isTurso
+  ? new sqlite.Database(env.DB_FILE, (err) => {
+      if (err) {
+        console.error("❌ Failed to connect to database:", err.message);
+      } else {
+        console.log(" Connected to SQLite database:", env.DB_FILE);
+      }
+    })
+  : null;
 
-// Promise wrappers
+export const tursoClient = isTurso
+  ? createClient({
+      url: process.env.TURSO_DATABASE_URL,
+      authToken: process.env.TURSO_AUTH_TOKEN
+    })
+  : null;
+
+export const db = localDb || tursoClient;
+
+
+/**
+ * Safe conversion of BigInt or large integers to JavaScript Numbers.
+ * Rejects unsafe values beyond Number.MIN_SAFE_INTEGER..Number.MAX_SAFE_INTEGER.
+ */
+export const safeConvertRowId = (val) => {
+  if (val === null || val === undefined) {
+    return null;
+  }
+  if (typeof val === "bigint") {
+    if (val < BigInt(Number.MIN_SAFE_INTEGER) || val > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new RangeError(
+        `Unsafe BigInt conversion: value ${val.toString()} exceeds JavaScript Number safe integer limits.`
+      );
+    }
+    return Number(val);
+  }
+  if (typeof val === "number") {
+    if (!Number.isSafeInteger(val)) {
+      throw new RangeError(
+        `Unsafe integer: value ${val} exceeds JavaScript Number safe integer limits.`
+      );
+    }
+    return val;
+  }
+  return val;
+};
+
+// Promise wrappers with normalized results & safe rowid conversion
 export const dbRun = (sql, params = []) => {
+  const activeTx = txContext.getStore()?.tursoTx;
+  if (isTurso && activeTx) {
+    return activeTx.execute({ sql, args: params }).then((res) => {
+      const safeId = safeConvertRowId(res.lastInsertRowid);
+      return {
+        lastID: safeId,
+        lastInsertRowid: safeId,
+        changes: res.rowsAffected,
+        rowsAffected: res.rowsAffected
+      };
+    });
+  }
+
+  if (isTurso && tursoClient) {
+    return tursoClient.execute({ sql, args: params }).then((res) => {
+      const safeId = safeConvertRowId(res.lastInsertRowid);
+      return {
+        lastID: safeId,
+        lastInsertRowid: safeId,
+        changes: res.rowsAffected,
+        rowsAffected: res.rowsAffected
+      };
+    });
+  }
+
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
       if (err) return reject(err);
-      resolve({ lastID: this.lastID, changes: this.changes });
+      try {
+        const safeId = safeConvertRowId(this.lastID);
+        resolve({
+          lastID: safeId,
+          lastInsertRowid: safeId,
+          changes: this.changes,
+          rowsAffected: this.changes
+        });
+      } catch (convErr) {
+        reject(convErr);
+      }
     });
   });
 };
 
 export const dbGet = (sql, params = []) => {
+  const activeTx = txContext.getStore()?.tursoTx;
+  if (isTurso && activeTx) {
+    return activeTx.execute({ sql, args: params }).then((res) => {
+      const row = res.rows[0];
+      return row ? { ...row } : undefined;
+    });
+  }
+
+  if (isTurso && tursoClient) {
+    return tursoClient.execute({ sql, args: params }).then((res) => {
+      const row = res.rows[0];
+      return row ? { ...row } : undefined;
+    });
+  }
+
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => {
       if (err) return reject(err);
-      resolve(row);
+      resolve(row ? { ...row } : undefined);
     });
   });
 };
 
 export const dbAll = (sql, params = []) => {
+  const activeTx = txContext.getStore()?.tursoTx;
+  if (isTurso && activeTx) {
+    return activeTx.execute({ sql, args: params }).then((res) => {
+      return (res.rows || []).map((r) => ({ ...r }));
+    });
+  }
+
+  if (isTurso && tursoClient) {
+    return tursoClient.execute({ sql, args: params }).then((res) => {
+      return (res.rows || []).map((r) => ({ ...r }));
+    });
+  }
+
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => {
       if (err) return reject(err);
-      resolve(rows || []);
+      resolve((rows || []).map((r) => ({ ...r })));
     });
   });
 };
 
+import { AsyncLocalStorage } from "async_hooks";
+
+const txContext = new AsyncLocalStorage();
+let savepointCounter = 0;
+
+/**
+ * Execute work in an isolated database transaction.
+ * Supports arbitrary transaction nesting via SQLite SAVEPOINTs in local SQLite.
+ * Prepares a dedicated branch for Turso interactive sessions via tursoClient.transaction('write').
+ *
+ * UNRESOLVED WARNING: Turso remote transaction behavior remains UNVERIFIED against a live cloud database.
+ */
+export const withTransaction = async (workFn) => {
+  const parent = txContext.getStore();
+
+  // Branch 1: Turso Interactive Session Transaction (Preparation Branch)
+  if (isTurso && tursoClient) {
+    if (!parent) {
+      const tursoTx = await tursoClient.transaction("write");
+      const context = { depth: 1, id: "root_turso", tursoTx };
+      return await txContext.run(context, async () => {
+        try {
+          const result = await workFn();
+          await tursoTx.commit();
+          return result;
+        } catch (err) {
+          try {
+            await tursoTx.rollback();
+          } catch (rollbackErr) {
+            console.error("⚠️ [Turso Transaction] Root rollback error:", rollbackErr.message);
+          }
+          throw err;
+        }
+      });
+    } else {
+      // Nested savepoint within active Turso transaction
+      savepointCounter = (savepointCounter + 1) % 1000000;
+      const savepointName = `sp_${parent.depth + 1}_${Date.now()}_${savepointCounter}`;
+      await parent.tursoTx.execute(`SAVEPOINT ${savepointName};`);
+      const context = { depth: parent.depth + 1, id: savepointName, tursoTx: parent.tursoTx };
+      return await txContext.run(context, async () => {
+        try {
+          const result = await workFn();
+          await parent.tursoTx.execute(`RELEASE SAVEPOINT ${savepointName};`);
+          return result;
+        } catch (err) {
+          try {
+            await parent.tursoTx.execute(`ROLLBACK TO SAVEPOINT ${savepointName};`);
+            await parent.tursoTx.execute(`RELEASE SAVEPOINT ${savepointName};`);
+          } catch (rollbackErr) {
+            console.error(`⚠️ [Turso Transaction] Savepoint rollback error (${savepointName}):`, rollbackErr.message);
+          }
+          throw err;
+        }
+      });
+    }
+  }
+
+  // Branch 2: Local SQLite Transactions (Active & Fully Verified)
+  if (!parent) {
+    // Root / Outermost transaction
+    await dbRun("BEGIN TRANSACTION;");
+    const context = { depth: 1, id: "root" };
+    return await txContext.run(context, async () => {
+      try {
+        const result = await workFn();
+        await dbRun("COMMIT;");
+        return result;
+      } catch (err) {
+        try {
+          await dbRun("ROLLBACK;");
+        } catch (rollbackErr) {
+          console.error("⚠️ [Database Transaction] Root rollback error:", rollbackErr.message);
+        }
+        throw err;
+      }
+    });
+  } else {
+    // Nested transaction: generate unique, safe savepoint name
+    savepointCounter = (savepointCounter + 1) % 1000000;
+    const savepointName = `sp_${parent.depth + 1}_${Date.now()}_${savepointCounter}`;
+    await dbRun(`SAVEPOINT ${savepointName};`);
+    const context = { depth: parent.depth + 1, id: savepointName };
+    return await txContext.run(context, async () => {
+      try {
+        const result = await workFn();
+        await dbRun(`RELEASE SAVEPOINT ${savepointName};`);
+        return result;
+      } catch (err) {
+        try {
+          await dbRun(`ROLLBACK TO SAVEPOINT ${savepointName};`);
+          await dbRun(`RELEASE SAVEPOINT ${savepointName};`);
+        } catch (rollbackErr) {
+          console.error(`⚠️ [Database Transaction] Savepoint rollback error (${savepointName}):`, rollbackErr.message);
+        }
+        throw err;
+      }
+    });
+  }
+};
+
+
 export const initDb = async () => {
   // Concurrency & reliability pragmas
   await dbRun("PRAGMA foreign_keys = ON;");
-  await dbRun("PRAGMA journal_mode = WAL;");
-  await dbRun("PRAGMA synchronous = NORMAL;");
-  await dbRun("PRAGMA busy_timeout = 5000;");
+  if (!isTurso) {
+    await dbRun("PRAGMA journal_mode = WAL;");
+    await dbRun("PRAGMA synchronous = NORMAL;");
+    await dbRun("PRAGMA busy_timeout = 5000;");
+  }
 
   // 1. Users table
   await dbRun(`
@@ -254,4 +468,49 @@ export const initDb = async () => {
 
   console.log(" Database schema initialized successfully with production indexes.");
 };
+
+/**
+ * Checkpoint WAL journal and close SQLite connection cleanly.
+ * Rejects if either checkpointing or database closure fails.
+ */
+export const checkpointAndCloseDb = async () => {
+  if (isTurso) {
+    if (tursoClient) {
+      tursoClient.close();
+      console.log(" [Database Shutdown] Turso client connection closed cleanly.");
+    }
+    return;
+  }
+
+  return new Promise((resolve, reject) => {
+    if (!db) return resolve();
+    let isClosed = false;
+    const closeDatabase = (checkpointError = null) => {
+      if (isClosed) return;
+      isClosed = true;
+      db.close((closeErr) => {
+        if (closeErr) {
+          console.error("❌ [Database Shutdown] Database close error:", closeErr.message);
+          return reject(checkpointError || closeErr);
+        }
+        if (checkpointError) {
+          return reject(checkpointError);
+        }
+        console.log(" [Database Shutdown] SQLite database connection closed cleanly.");
+        resolve();
+      });
+    };
+
+    db.run("PRAGMA wal_checkpoint(TRUNCATE);", [], (checkpointErr) => {
+      if (checkpointErr) {
+        console.error("⚠️ [Database Shutdown] WAL checkpoint error:", checkpointErr.message);
+        closeDatabase(checkpointErr);
+      } else {
+        console.log(" [Database Shutdown] SQLite WAL checkpointed successfully.");
+        closeDatabase(null);
+      }
+    });
+  });
+};
+
 

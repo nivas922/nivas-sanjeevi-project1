@@ -165,24 +165,31 @@ export class DocumentProcessorService {
   static async processDocument({
     bookId,
     filePath,
+    fileBuffer,
+    originalName = "",
     mimeType,
     chunkSize = CHUNK_CONFIG.DEFAULT_CHUNK_SIZE,
     overlap = CHUNK_CONFIG.DEFAULT_CHUNK_OVERLAP
   }) {
-    if (!filePath || !fs.existsSync(filePath)) {
-      const err = new Error("Document file does not exist on disk.");
+    if (!fileBuffer && (!filePath || !fs.existsSync(filePath))) {
+      const err = new Error("Document file does not exist on disk and no in-memory buffer provided.");
       err.statusCode = 404;
       throw err;
     }
 
     let extractionResult = { pages: [], fullText: "", totalPages: 0 };
 
-    const ext = path.extname(filePath).toLowerCase();
+    const ext = filePath
+      ? path.extname(filePath).toLowerCase()
+      : (originalName ? path.extname(originalName).toLowerCase() : "");
 
     if (ext === ".pdf" || mimeType === "application/pdf") {
-      extractionResult = await PdfExtractorService.extractPagesFromFile(filePath);
+      extractionResult = fileBuffer
+        ? await PdfExtractorService.extractPagesFromPdfBuffer(fileBuffer)
+        : await PdfExtractorService.extractPagesFromFile(filePath);
     } else if (ext === ".txt") {
-      const txtContent = PdfExtractorService.normalizeText(fs.readFileSync(filePath, "utf-8"));
+      const rawText = fileBuffer ? fileBuffer.toString("utf-8") : fs.readFileSync(filePath, "utf-8");
+      const txtContent = PdfExtractorService.normalizeText(rawText);
       if (!txtContent || txtContent.trim().length === 0) {
         const err = new Error("This document does not contain extractable text. Please upload a text-based document.");
         err.statusCode = 400;

@@ -7,8 +7,9 @@ const router = Router();
 
 router.post("/upload-book", uploadRateLimiter, uploadBookMiddleware, BookController.uploadBook);
 router.get("/books", BookController.getUserBooks);
-router.get("/books/:id", BookController.getBookById);
+router.get("/books/:id/file", BookController.getBookFile);
 router.get("/books/:id/chunks", BookController.getBookChunks);
+router.get("/books/:id", BookController.getBookById);
 
 export default router;
 

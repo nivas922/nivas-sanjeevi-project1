@@ -154,7 +154,17 @@ STRICT AI TUTOR RULES:
 }`;
 
     // 8. Call Gemini API with Retry
-    const rawResponse = await AiSummaryService.callGeminiApiWithRetry(prompt);
+    let rawResponse;
+    try {
+      rawResponse = await AiSummaryService.callGeminiApiWithRetry(prompt);
+    } catch (apiErr) {
+      if (apiErr.statusCode === 429 || apiErr.status === 429) {
+        const err = new Error("AI tutor service is currently experiencing high demand (rate limited). Please try asking again in a few moments.");
+        err.statusCode = 429;
+        throw err;
+      }
+      throw apiErr;
+    }
     const parsedJSON = AiSummaryService.parseJsonFromGemini(rawResponse);
 
     if (!parsedJSON || !parsedJSON.answer || typeof parsedJSON.answer !== "string") {

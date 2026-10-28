@@ -189,8 +189,8 @@ const runPhase5Tests = async () => {
     assert.strictEqual(data3.error, "Textbook not found.");
     console.log("✔ TEST 3 PASSED: Non-existent book rejected with 404.");
 
-    // TEST 4: Open Access: Any student can query uploaded textbook without ownership restriction
-    console.log("\n[TEST 4] Open Access: Student can query textbook without 403 Forbidden");
+    // TEST 4: Private Textbook Authorization: Student B cannot access Student A's private book (403 Forbidden)
+    console.log("\n[TEST 4] Private Textbook Authorization: Cross-user access blocked with 403 Forbidden");
     const res4 = await fetch(`${BASE_URL}/ask-doubt`, {
       method: "POST",
       headers: {
@@ -203,9 +203,9 @@ const runPhase5Tests = async () => {
       })
     });
     const data4 = await res4.json();
-    assert.strictEqual(res4.status, 200);
-    assert.strictEqual(data4.success, true);
-    console.log("✔ TEST 4 PASSED: Student can query textbook directly without ownership checks.");
+    assert.strictEqual(res4.status, 403);
+    assert.strictEqual(data4.success, false);
+    console.log("✔ TEST 4 PASSED: Unauthorized cross-user textbook access strictly blocked with HTTP 403.");
 
     // TEST 5 & 6: Relevant Chunks Retrieved & Combined into Context
     console.log("\n[TEST 5 & 6] Keyword Retrieval & Context Combination");

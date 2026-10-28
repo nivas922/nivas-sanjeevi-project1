@@ -407,8 +407,97 @@ async function runAiTutorTextbookLookupRegressionTests() {
     }
     console.log("✔ TEST 8 PASSED: Complete cross-book retrieval isolation verified.\n");
 
+    // ========================================================
+    // REGRESSION TEST 9: Textbook with empty chunks returns safe insufficient evidence
+    // ========================================================
+    console.log("[TEST 9] Textbook with zero chunks returns safe insufficient evidence");
+    const bookEmpty = await Book.create({
+      id: `book_empty_${timestamp}`,
+      user_id: userAId,
+      file_url: "/uploads/empty.pdf",
+      title: "Scanned Empty Book",
+      subject: "Testing",
+      extracted_text: ""
+    });
+
+    const res9 = await fetch(`${BASE_URL}/ask-doubt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenA}` },
+      body: JSON.stringify({
+        bookId: bookEmpty.id,
+        question: "Explain quantum electrodynamics",
+        language: "en"
+      })
+    });
+    const data9 = await res9.json();
+    assert.strictEqual(res9.status, 200);
+    assert.strictEqual(data9.hasRelevantContent, false);
+    assert.strictEqual(data9.insufficientEvidence, true);
+    assert.strictEqual(data9.sources.length, 0);
+    console.log("✔ TEST 9 PASSED: Zero-chunk textbook returns safe ungrounded handling without crash.\n");
+
+    // ========================================================
+    // REGRESSION TEST 10: Gemini API failure & 429 rate limit handling
+    // ========================================================
+    console.log("[TEST 10] Gemini rate limit (429) returns clean status without internal leaks");
+    const origCall = AiSummaryService.callGeminiApiWithRetry;
+    try {
+      AiSummaryService.callGeminiApiWithRetry = async () => {
+        const rateLimitErr = new Error("Rate limit exceeded");
+        rateLimitErr.statusCode = 429;
+        throw rateLimitErr;
+      };
+
+      const res10 = await fetch(`${BASE_URL}/ask-doubt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenA}` },
+        body: JSON.stringify({
+          bookId: book1.id,
+          question: "Explain semaphores in detail",
+          language: "en"
+        })
+      });
+      const data10 = await res10.json();
+      assert.strictEqual(res10.status, 429);
+      assert.strictEqual(data10.success, false);
+      assert.ok(data10.error.includes("high demand") || data10.error.includes("rate limit"));
+      console.log("✔ TEST 10 PASSED: 429 rate limit correctly returns HTTP 429 with student-friendly message.\n");
+    } finally {
+      AiSummaryService.callGeminiApiWithRetry = origCall;
+    }
+
+    // ========================================================
+    // REGRESSION TEST 11: Sequential multi-book switching retains isolation
+    // ========================================================
+    console.log("[TEST 11] Rapid sequential textbook switching maintains strict book grounding");
+    // Query Book 1, then Book 2, then Book 1 again
+    const q1 = await fetch(`${BASE_URL}/ask-doubt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenA}` },
+      body: JSON.stringify({ bookId: book1.id, question: "Explain semaphore synchronization", language: "en" })
+    });
+    const d1 = await q1.json();
+    assert.strictEqual(d1.sources[0].chunkId, chunk1.id);
+
+    const q2 = await fetch(`${BASE_URL}/ask-doubt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenA}` },
+      body: JSON.stringify({ bookId: book2.id, question: "Explain atomicity in transactions", language: "en" })
+    });
+    const d2 = await q2.json();
+    assert.strictEqual(d2.sources[0].chunkId, chunk2.id);
+
+    const q3 = await fetch(`${BASE_URL}/ask-doubt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenA}` },
+      body: JSON.stringify({ bookId: book1.id, question: "Explain semaphore synchronization", language: "en" })
+    });
+    const d3 = await q3.json();
+    assert.strictEqual(d3.sources[0].chunkId, chunk1.id);
+    console.log("✔ TEST 11 PASSED: Sequential book switching maintains strict deterministic isolation.\n");
+
     console.log("==================================================");
-    console.log("🎉 ALL 8 AI TUTOR LOOKUP REGRESSION TESTS PASSED!");
+    console.log("🎉 ALL 11 AI TUTOR LOOKUP REGRESSION TESTS PASSED!");
     console.log("==================================================\n");
   } finally {
     server.close();

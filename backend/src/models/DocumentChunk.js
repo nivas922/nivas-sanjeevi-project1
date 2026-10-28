@@ -62,20 +62,58 @@ export class DocumentChunk {
     if (!Array.isArray(chunks) || chunks.length === 0) {
       return [];
     }
-    const created = [];
-    for (const chunk of chunks) {
-      const item = await this.create({
-        id: chunk.id || chunk.chunkId || "chk_" + uuidv4().slice(0, 12),
-        book_id: chunk.book_id || chunk.bookId,
-        chapter: chunk.chapter || "Chapter 1: Overview",
-        section: chunk.section || "General Content",
-        page_start: chunk.page_start || chunk.pageStart || 1,
-        page_end: chunk.page_end || chunk.pageEnd || 1,
-        chunk_index: chunk.chunk_index !== undefined ? chunk.chunk_index : (chunk.chunkIndex || 0),
-        text: chunk.text
-      });
-      created.push(item);
+
+    const normalized = chunks.map((chunk, idx) => ({
+      id: chunk.id || chunk.chunkId || "chk_" + uuidv4().slice(0, 12),
+      book_id: chunk.book_id || chunk.bookId,
+      chapter: chunk.chapter || "Chapter 1: Overview",
+      section: chunk.section || "General Content",
+      page_start: chunk.page_start || chunk.pageStart || 1,
+      page_end: chunk.page_end || chunk.pageEnd || 1,
+      chunk_index: chunk.chunk_index !== undefined ? chunk.chunk_index : (chunk.chunkIndex !== undefined ? chunk.chunkIndex : idx),
+      text: chunk.text
+    }));
+
+    // Multi-row INSERT in bounded batches (50 rows * 8 params = 400 params, well under SQLite 999 limit)
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < normalized.length; i += BATCH_SIZE) {
+      const batch = normalized.slice(i, i + BATCH_SIZE);
+      const valuePlaceholders = batch.map(() => "(?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+      const params = [];
+      for (const item of batch) {
+        params.push(
+          item.id,
+          item.book_id,
+          item.chapter,
+          item.section,
+          item.page_start,
+          item.page_end,
+          item.chunk_index,
+          item.text
+        );
+      }
+      await dbRun(
+        `INSERT INTO document_chunks (id, book_id, chapter, section, page_start, page_end, chunk_index, text)
+         VALUES ${valuePlaceholders};`,
+        params
+      );
     }
-    return created;
+
+    // Retrieve database rows to ensure created_at and exact DB representation are captured,
+    // and map them back to preserve the exact input ordering.
+    const idMap = new Map();
+    for (let i = 0; i < normalized.length; i += 100) {
+      const idBatch = normalized.slice(i, i + 100).map((c) => c.id);
+      const placeholders = idBatch.map(() => "?").join(", ");
+      const rows = await dbAll(
+        `SELECT * FROM document_chunks WHERE id IN (${placeholders});`,
+        idBatch
+      );
+      for (const row of rows) {
+        idMap.set(row.id, this.format(row));
+      }
+    }
+
+    return normalized.map((item) => idMap.get(item.id) || this.format(item));
   }
 }

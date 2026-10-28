@@ -2,15 +2,25 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { v4 as uuidv4 } from "uuid";
-import { env } from "../config/env.js";
+import { env, parseBoundedFileSizeMb } from "../config/env.js";
+import { StoragePreflight } from "../config/storagePreflight.js";
 
-// Ensure uploads folder exists
-if (!fs.existsSync(env.UPLOAD_DIR)) {
-  fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
+import { CloudinaryService } from "../services/cloudinaryService.js";
+
+export const isCloudinary = CloudinaryService.isConfigured();
+
+// Validate storage preflight before configuring multer disk storage in local mode - fail closed immediately if invalid
+if (!isCloudinary) {
+  const preflightResult = StoragePreflight.validate();
+  if (!preflightResult.ok) {
+    const errorMsg = `CRITICAL STORAGE PREFLIGHT ERROR: Cannot configure upload storage. ${preflightResult.errors.join("; ")}`;
+    console.error("❌ [Upload Middleware]", errorMsg);
+    throw new Error(errorMsg);
+  }
 }
 
-// Storage engine - enforces safe randomized server-side filenames and prevents directory traversal
-const storage = multer.diskStorage({
+// Storage engine - local diskStorage for offline mode, memoryStorage for cloud streaming
+const diskStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, env.UPLOAD_DIR);
   },
@@ -22,6 +32,8 @@ const storage = multer.diskStorage({
     cb(null, safeName);
   }
 });
+
+const storage = isCloudinary ? multer.memoryStorage() : diskStorage;
 
 const DANGEROUS_EXTENSIONS = [
   ".exe", ".sh", ".bat", ".cmd", ".com", ".pif", ".scr", ".vbs",
@@ -64,13 +76,49 @@ const textbookFilter = (req, file, cb) => {
   }
 };
 
-// 50MB max limit for textbooks (configurable)
-const maxFileSize = (env.MAX_FILE_SIZE_MB || 50) * 1024 * 1024;
-export const uploadBookMiddleware = multer({
+// Configurable limits: 50MB local default, separate configurable limit for Cloudinary (bounded 1-100MB)
+export const getMaxFileSize = () => {
+  if (isCloudinary) {
+    const mb = parseBoundedFileSizeMb(env.CLOUDINARY_MAX_FILE_SIZE_MB, 10, 1, 100);
+    return mb * 1024 * 1024;
+  }
+  const mb = parseBoundedFileSizeMb(env.MAX_FILE_SIZE_MB, 50, 1, 100);
+  return mb * 1024 * 1024;
+};
+
+const rawUploadBook = multer({
   storage,
-  limits: { fileSize: maxFileSize },
+  limits: { fileSize: (env.MAX_FILE_SIZE_MB || 50) * 1024 * 1024 },
   fileFilter: textbookFilter
 }).single("file");
+
+export const uploadBookMiddleware = (req, res, next) => {
+  // Dynamically apply appropriate limit depending on active storage engine
+  const activeLimit = getMaxFileSize();
+  const activeUploader = multer({
+    storage,
+    limits: { fileSize: activeLimit },
+    fileFilter: textbookFilter
+  }).single("file");
+
+  activeUploader(req, res, (err) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        const limitMb = Math.round(activeLimit / (1024 * 1024));
+        return res.status(400).json({
+          success: false,
+          error: `File size exceeds maximum allowed upload limit of ${limitMb}MB.`
+        });
+      }
+      return res.status(err.statusCode || 400).json({
+        success: false,
+        error: err.message || "File upload failed."
+      });
+    }
+    next();
+  });
+};
+
 
 // File filter for profile pictures
 const avatarFilter = (req, file, cb) => {

@@ -54,6 +54,17 @@ const parseCorsOrigins = () => {
   return origins;
 };
 
+export const parseBoundedFileSizeMb = (rawVal, defaultMb, minMb = 1, maxMb = 100) => {
+  if (rawVal === undefined || rawVal === null || String(rawVal).trim() === "") {
+    return defaultMb;
+  }
+  const parsed = parseInt(String(rawVal).trim(), 10);
+  if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed <= 0) {
+    return defaultMb;
+  }
+  return Math.min(Math.max(parsed, minMb), maxMb);
+};
+
 export const env = {
   PORT: process.env.PORT || 5000,
   NODE_ENV,
@@ -64,7 +75,7 @@ export const env = {
   STORAGE_TYPE: process.env.STORAGE_TYPE || "local",
   UPLOAD_DIR: process.env.UPLOAD_DIR || path.resolve(__dirname, "../../uploads"),
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
-  GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
+  GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-2.5-flash",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
   GOOGLE_TRANSLATE_API_KEY: process.env.GOOGLE_TRANSLATE_API_KEY || "",
   OTP_PROVIDER: process.env.OTP_PROVIDER || "dev",
@@ -73,8 +84,12 @@ export const env = {
   TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER || "",
   MSG91_AUTH_KEY: process.env.MSG91_AUTH_KEY || "",
   FRONTEND_URL: process.env.FRONTEND_URL || (NODE_ENV === "production" ? "https://nivas-sanjeevi-project1-pnb5.vercel.app" : "http://localhost:5173"),
-  CORS_ORIGINS: parseCorsOrigins(),
-  MAX_FILE_SIZE_MB: parseInt(process.env.MAX_FILE_SIZE_MB || "50", 10)
+  MAX_FILE_SIZE_MB: parseBoundedFileSizeMb(process.env.MAX_FILE_SIZE_MB, 50, 1, 100),
+  CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME || "",
+  CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY || "",
+  CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET || "",
+  CLOUDINARY_URL: process.env.CLOUDINARY_URL || "",
+  CLOUDINARY_MAX_FILE_SIZE_MB: parseBoundedFileSizeMb(process.env.CLOUDINARY_MAX_FILE_SIZE_MB, 10, 1, 100)
 };
 
 export const validateProductionConfig = () => {

@@ -113,4 +113,20 @@ export class PdfExtractorService {
     const fileBuffer = fs.readFileSync(filePath);
     return await this.extractPagesFromPdfBuffer(fileBuffer);
   }
+
+  /**
+   * Unified extractor supporting either a file path (string) or an in-memory Buffer.
+   */
+  static async extractPages(input) {
+    if (Buffer.isBuffer(input) || input instanceof Uint8Array) {
+      return await this.extractPagesFromPdfBuffer(input);
+    }
+    if (typeof input === "string") {
+      return await this.extractPagesFromFile(input);
+    }
+    const err = new Error("Invalid input: extractPages requires a file path string or Buffer.");
+    err.statusCode = 400;
+    throw err;
+  }
 }
+
