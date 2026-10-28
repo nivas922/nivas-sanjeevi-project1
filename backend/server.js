@@ -1,6 +1,7 @@
 import { app } from "./src/app.js";
 import { env, validateProductionConfig } from "./src/config/env.js";
-import { initDb, checkpointAndCloseDb } from "./src/config/db.js";
+import { initDb, checkpointAndCloseDb, isTurso } from "./src/config/db.js";
+import { isCloudinary } from "./src/middleware/upload.js";
 import { runStoragePreflight } from "./src/config/storagePreflight.js";
 
 let isShuttingDown = false;
@@ -18,11 +19,16 @@ const startServer = async () => {
     await initDb();
 
     const server = app.listen(env.PORT, () => {
+      const activeDb = isTurso ? "Turso (@libsql/client remote SQLite)" : `SQLite (${env.DB_FILE})`;
+      const activeStorage = isCloudinary ? "Cloudinary (authenticated cloud stream)" : `Local Storage (${env.UPLOAD_DIR})`;
       console.log(`====================================================`);
       console.log(` LearnAI Backend Server is running on port ${env.PORT}`);
       console.log(` Environment: ${env.NODE_ENV}`);
-      console.log(` Database: SQLite (${env.DB_FILE})`);
-      console.log(` Uploads: Local Storage (${env.UPLOAD_DIR})`);
+      console.log(` Database: ${activeDb}`);
+      console.log(` File Storage: ${activeStorage}`);
+      if (isCloudinary) {
+        console.log(` Audio Cache: Local Ephemeral (${env.UPLOAD_DIR})`);
+      }
       console.log(` API Base URLs: http://localhost:${env.PORT}/ and http://localhost:${env.PORT}/api/`);
       console.log(`====================================================`);
     });

@@ -37,22 +37,24 @@ app.use(
 );
 
 // Restricted CORS configuration
-const corsOptions = {
+export const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
+
+    const allowedOrigins = Array.isArray(env.CORS_ORIGINS) ? env.CORS_ORIGINS : [];
 
     if (env.NODE_ENV !== "production") {
       if (
         origin.startsWith("http://localhost:") ||
         origin.startsWith("http://127.0.0.1:") ||
-        env.CORS_ORIGINS.includes(origin)
+        allowedOrigins.includes(origin)
       ) {
         return callback(null, true);
       }
       return callback(null, true);
     }
 
-    if (env.CORS_ORIGINS.includes("*") || env.CORS_ORIGINS.includes(origin)) {
+    if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
@@ -66,6 +68,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 // HTTP Logger
 if (env.NODE_ENV !== "test") {

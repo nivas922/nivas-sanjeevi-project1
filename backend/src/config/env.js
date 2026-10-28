@@ -26,7 +26,7 @@ const resolveJwtSecret = () => {
 };
 
 // Safe origins list
-const parseCorsOrigins = () => {
+export const parseCorsOrigins = () => {
   const origins = [];
   if (process.env.FRONTEND_URL) {
     origins.push(process.env.FRONTEND_URL.trim());
@@ -74,6 +74,7 @@ export const env = {
   DB_FILE: process.env.DB_FILE || path.resolve(__dirname, "../../data/learnai.db"),
   STORAGE_TYPE: process.env.STORAGE_TYPE || "local",
   UPLOAD_DIR: process.env.UPLOAD_DIR || path.resolve(__dirname, "../../uploads"),
+  CORS_ORIGINS: parseCorsOrigins(),
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
   GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-2.5-flash",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",

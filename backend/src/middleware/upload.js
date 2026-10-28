@@ -9,6 +9,13 @@ import { CloudinaryService } from "../services/cloudinaryService.js";
 
 export const isCloudinary = CloudinaryService.isConfigured();
 
+// Production fail-closed guard: prohibit silent fallback to local disk storage if Cloudinary is configured
+if (env.NODE_ENV === "production" && (env.STORAGE_TYPE === "cloudinary" || process.env.STORAGE_TYPE === "cloudinary") && !isCloudinary) {
+  const errorMsg = "CRITICAL STORAGE CONFIGURATION ERROR: STORAGE_TYPE='cloudinary' is configured in production, but valid Cloudinary credentials are missing. Silent fallback to local disk storage is strictly prohibited.";
+  console.error("❌ [Upload Middleware]", errorMsg);
+  throw new Error(errorMsg);
+}
+
 // Validate storage preflight before configuring multer disk storage in local mode - fail closed immediately if invalid
 if (!isCloudinary) {
   const preflightResult = StoragePreflight.validate();
@@ -33,7 +40,7 @@ const diskStorage = multer.diskStorage({
   }
 });
 
-const storage = isCloudinary ? multer.memoryStorage() : diskStorage;
+export const storage = isCloudinary ? multer.memoryStorage() : diskStorage;
 
 const DANGEROUS_EXTENSIONS = [
   ".exe", ".sh", ".bat", ".cmd", ".com", ".pif", ".scr", ".vbs",

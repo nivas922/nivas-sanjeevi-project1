@@ -7,6 +7,13 @@ import { StoragePreflight } from "./storagePreflight.js";
 
 export const isTurso = Boolean(process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN);
 
+// Production fail-closed guard: prohibit silent fallback to SQLite if Turso is configured
+if (env.NODE_ENV === "production" && (env.DB_TYPE === "turso" || process.env.DB_TYPE === "turso") && !isTurso) {
+  const errorMsg = "CRITICAL DATABASE CONFIGURATION ERROR: DB_TYPE='turso' is configured in production, but valid TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are missing. Silent fallback to local SQLite is strictly prohibited.";
+  console.error("❌ [Database]", errorMsg);
+  throw new Error(errorMsg);
+}
+
 // Validate storage configuration before initializing database - fail closed immediately if invalid
 if (!isTurso) {
   const preflightResult = StoragePreflight.validate();
