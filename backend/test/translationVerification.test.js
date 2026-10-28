@@ -262,6 +262,9 @@ const runVerification = async () => {
       "Endpoint must point to Google Generative Language v1beta models"
     );
     const validGeminiModels = [
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
       "gemini-3.5-flash-lite",
       "gemini-3.8-flash"
     ];
@@ -296,7 +299,7 @@ const runVerification = async () => {
             text: async () => "models/gemini-simulated-unsupported-model is not found or not supported"
           };
         }
-        if (url.includes("gemini-3.5-flash-lite")) {
+        if (url.includes("gemini-2.5-flash")) {
           workingModelCalls++;
           return {
             status: 200,
@@ -309,7 +312,7 @@ const runVerification = async () => {
         return originalFetch(url, opts);
       };
 
-      // Call 1: Should encounter 404 on unsupported model, cache it, fall back to gemini-3.5-flash-lite
+      // Call 1: Should encounter 404 on unsupported model, cache it, fall back to gemini-2.5-flash
       const call1Result = await AiSummaryService.callGeminiApiWithRetry("Translate test chunk");
       assert.strictEqual(call1Result, "Mocked translation response");
       assert.strictEqual(simulated404Calls, 1, "Should have received 404 exactly once on model discovery");
@@ -320,8 +323,8 @@ const runVerification = async () => {
       );
       assert.strictEqual(
         AiSummaryService.getActiveWorkingModel(),
-        "gemini-3.5-flash-lite",
-        "Active working model must be cached as gemini-3.5-flash-lite"
+        "gemini-2.5-flash",
+        "Active working model must be cached as gemini-2.5-flash"
       );
 
       // Call 2: Must directly call activeWorkingModel and NOT re-query unsupported model (zero repeated 404s)
@@ -333,7 +336,7 @@ const runVerification = async () => {
       // Verify transient failure (429 / 503) does NOT mark model as unsupported
       let transient503Called = 0;
       global.fetch = async (url, opts) => {
-        if (url.includes("gemini-3.5-flash-lite")) {
+        if (url.includes("gemini-2.5-flash")) {
           transient503Called++;
           return {
             status: 503,
@@ -351,7 +354,7 @@ const runVerification = async () => {
         assert.strictEqual(err.statusCode, 503);
       }
       assert.strictEqual(
-        AiSummaryService.getUnsupportedModels().includes("gemini-3.5-flash-lite"),
+        AiSummaryService.getUnsupportedModels().includes("gemini-2.5-flash"),
         false,
         "Temporary 503 failure must NOT cache valid model as unsupported"
       );

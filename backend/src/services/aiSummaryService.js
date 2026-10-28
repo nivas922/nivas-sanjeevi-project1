@@ -665,6 +665,7 @@ Return ONLY a valid JSON object:
         allSentences.push(...sList);
       }
 
+      const seenQ = new Set();
       for (let i = 0; i < count; i++) {
         const m = chunkMatches[i % chunkMatches.length];
         const rawChapter = (m[1] || "").trim();
@@ -685,17 +686,25 @@ Return ONLY a valid JSON object:
         // Formulate meaningful academic question from sentence definition or statement
         let qText;
         let correctOption = conceptSentence.slice(0, 110);
-        const defMatch = conceptSentence.match(/^(.*?)\s+(?:is|are|refers to|represents|measures|defines|operates by|consists of|describes)\s+(.*)/i);
+        const defMatch = conceptSentence.match(/^(.*?)\s+(?:is|are|refers to|represents|measures|defines|operates by|consists of|describes|discusses|explains|covers|manages)\s+(.*)/i);
+        const sectionLabel = rawSection ? ` - ${rawSection}` : "";
         const qSuffix = i < chunkMatches.length ? "" : ` (Part ${i + 1})`;
 
         if (defMatch && defMatch[1].length > 2 && defMatch[1].length < 50) {
           const subjectTerm = defMatch[1].trim();
           const predicateDef = defMatch[2].trim();
-          qText = `In ${cleanTopic}, what is the primary role or definition of ${subjectTerm}${qSuffix}?`;
+          qText = `In ${cleanTopic}${sectionLabel}, what is the primary role or definition of ${subjectTerm}${qSuffix}?`;
           correctOption = `${predicateDef.charAt(0).toUpperCase()}${predicateDef.slice(1, 110)}`;
         } else {
-          qText = `Which key principle is established in ${cleanTopic}${qSuffix}?`;
+          qText = `Which key principle is established in ${cleanTopic}${sectionLabel}${qSuffix}?`;
         }
+
+        let normalizedQ = qText.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (seenQ.has(normalizedQ)) {
+          qText = `${qText} (Item ${i + 1})`;
+          normalizedQ = qText.toLowerCase().replace(/[^a-z0-9]/g, "");
+        }
+        seenQ.add(normalizedQ);
 
         // Ensure 4 strictly distinct, valid options
         const otherSentences = allSentences.filter((s) => s !== conceptSentence);

@@ -344,11 +344,16 @@ const runPhase3VerificationTests = async () => {
     });
     assert.strictEqual(crossSumRes.status, 200, "Direct access allowed to summary");
 
-    // Access book chunks directly
+    // Access book chunks: owner allowed (200), cross-user protected (403)
+    const ownChunkRes = await fetch(`${BASE_URL}/books/${bookIdA}/chunks`, {
+      headers: { Authorization: `Bearer ${tokenA}` }
+    });
+    assert.strictEqual(ownChunkRes.status, 200, "Owner direct access allowed to textbook chunks");
+
     const crossChunkRes = await fetch(`${BASE_URL}/books/${bookIdA}/chunks`, {
       headers: { Authorization: `Bearer ${tokenB}` }
     });
-    assert.strictEqual(crossChunkRes.status, 200, "Direct access allowed to textbook chunks");
+    assert.strictEqual(crossChunkRes.status, 403, "Cross-user access to private textbook chunks blocked with 403");
 
     // Summarize book directly
     const crossSummarizeRes = await fetch(`${BASE_URL}/summarize`, {
@@ -361,7 +366,7 @@ const runPhase3VerificationTests = async () => {
     });
     assert.strictEqual(crossSummarizeRes.status, 200, "Direct access allowed to summarize book");
 
-    console.log("✔ CASE 13 PASSED: Open access permitted across summaries, chunks, and summarize endpoint without 403.");
+    console.log("✔ CASE 13 PASSED: Summary access permitted, own chunks accessible with 200, and cross-user chunks securely isolated with 403.");
 
     console.log("\n🎉 ALL 13 PHASE 3 FOCUSED TESTS PASSED FLAWLESSLY!\n");
   } finally {

@@ -313,6 +313,12 @@ export class StoragePreflight {
   }
 
   /**
+   * Recognized secure Turso / libSQL remote connection protocols supported by @libsql/client.
+   * Insecure protocols (http:, ws:) are strictly rejected in production to guarantee TLS encryption in transit.
+   */
+  static SECURE_TURSO_PROTOCOLS = ["libsql:", "https:", "wss:"];
+
+  /**
    * Validates storage environment and enforces fail-closed behavior.
    * Does NOT blindly create directories when targeting persistent mounts.
    */
@@ -322,6 +328,133 @@ export class StoragePreflight {
     const uploadDir = options.uploadDir || env.UPLOAD_DIR;
     const isProduction = nodeEnv === "production";
     const mountRoot = options.mountRoot || "/var/data";
+    const dbType = (options.dbType !== undefined ? options.dbType : (process.env.DB_TYPE || env.DB_TYPE || "sqlite")).toLowerCase();
+    const storageType = (options.storageType !== undefined ? options.storageType : (process.env.STORAGE_TYPE || env.STORAGE_TYPE || "local")).toLowerCase();
+
+    // 1. Inspect remote database credentials (Turso / libSQL)
+    const tursoUrl = options.tursoUrl !== undefined ? options.tursoUrl : (process.env.TURSO_DATABASE_URL || "");
+    const tursoToken = options.tursoToken !== undefined ? options.tursoToken : (process.env.TURSO_AUTH_TOKEN || "");
+    const hasTursoUrl = Boolean(tursoUrl && String(tursoUrl).trim().length > 0);
+    const hasTursoToken = Boolean(tursoToken && String(tursoToken).trim().length > 0);
+    const isTursoActive = hasTursoUrl && hasTursoToken;
+    const hasPartialTurso = hasTursoUrl !== hasTursoToken;
+
+    // 2. Inspect remote cloud storage credentials (Cloudinary)
+    const cloudinaryUrl = options.cloudinaryUrl !== undefined ? options.cloudinaryUrl : (process.env.CLOUDINARY_URL || env.CLOUDINARY_URL || "");
+    const cloudinaryName = options.cloudinaryCloudName !== undefined ? options.cloudinaryCloudName : (process.env.CLOUDINARY_CLOUD_NAME || env.CLOUDINARY_CLOUD_NAME || "");
+    const cloudinaryKey = options.cloudinaryApiKey !== undefined ? options.cloudinaryApiKey : (process.env.CLOUDINARY_API_KEY || env.CLOUDINARY_API_KEY || "");
+    const cloudinarySecret = options.cloudinaryApiSecret !== undefined ? options.cloudinaryApiSecret : (process.env.CLOUDINARY_API_SECRET || env.CLOUDINARY_API_SECRET || "");
+
+    const hasCloudinaryUrl = Boolean(cloudinaryUrl && String(cloudinaryUrl).trim().length > 0);
+    const hasCloudinaryTrio = Boolean(
+      cloudinaryName && String(cloudinaryName).trim().length > 0 &&
+      cloudinaryKey && String(cloudinaryKey).trim().length > 0 &&
+      cloudinarySecret && String(cloudinarySecret).trim().length > 0
+    );
+    const isCloudinaryActive = hasCloudinaryUrl || hasCloudinaryTrio;
+    const hasPartialCloudinary = !hasCloudinaryUrl && !hasCloudinaryTrio && Boolean(
+      (cloudinaryName && String(cloudinaryName).trim().length > 0) ||
+      (cloudinaryKey && String(cloudinaryKey).trim().length > 0) ||
+      (cloudinarySecret && String(cloudinarySecret).trim().length > 0)
+    );
+
+    // 3. Evaluate Cloud Mode vs Local Disk Mode in Production
+    const errors = [];
+
+    // Protocol validation against @libsql/client supported secure remote protocols
+    if (hasTursoUrl) {
+      try {
+        const parsed = new URL(tursoUrl);
+        if (!StoragePreflight.SECURE_TURSO_PROTOCOLS.includes(parsed.protocol)) {
+          errors.push(`Invalid TURSO_DATABASE_URL protocol '${parsed.protocol}'. Supported secure protocols: libsql://, https://, wss://.`);
+        }
+      } catch (urlErr) {
+        errors.push(`Invalid TURSO_DATABASE_URL format: ${urlErr.message}`);
+      }
+    }
+
+    // Check for explicit or partial cloud configuration errors
+    if (hasPartialTurso) {
+      errors.push("Incomplete Turso database configuration: both TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are required.");
+    }
+    if (hasPartialCloudinary) {
+      errors.push("Incomplete Cloudinary storage configuration: CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET (or CLOUDINARY_URL) are all required.");
+    }
+
+    if (dbType === "turso" && !isTursoActive) {
+      errors.push("DB_TYPE is set to 'turso', but valid TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are not configured.");
+    }
+    if (storageType === "cloudinary" && !isCloudinaryActive) {
+      errors.push("STORAGE_TYPE is set to 'cloudinary', but valid Cloudinary credentials (CLOUDINARY_URL or CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET) are not configured.");
+    }
+
+    // Mismatched cloud configuration validations
+    if (dbType === "turso" && storageType !== "cloudinary") {
+      errors.push(`Mismatched cloud configuration: DB_TYPE is set to 'turso' but STORAGE_TYPE is '${storageType}'. Both DB_TYPE='turso' and STORAGE_TYPE='cloudinary' are required in cloud mode.`);
+    }
+    if (storageType === "cloudinary" && dbType !== "turso") {
+      errors.push(`Mismatched cloud configuration: STORAGE_TYPE is set to 'cloudinary' but DB_TYPE is '${dbType}'. Both DB_TYPE='turso' and STORAGE_TYPE='cloudinary' are required in cloud mode.`);
+    }
+
+    const hasPersistentDisk = fs.existsSync(mountRoot);
+
+    // In production without an attached persistent disk, cloud mode is required.
+    // If either side is missing, fail closed without silent fallback to ephemeral disk.
+    if (isProduction && !hasPersistentDisk) {
+      if (dbType !== "turso") {
+        errors.push(`Production cloud mode requires DB_TYPE='turso' (received '${dbType}'). Refusing silent fallback to ephemeral container disk for database.`);
+      }
+      if (storageType !== "cloudinary") {
+        errors.push(`Production cloud mode requires STORAGE_TYPE='cloudinary' (received '${storageType}'). Refusing silent fallback to ephemeral container disk for PDF storage.`);
+      }
+      if (isTursoActive && !isCloudinaryActive) {
+        errors.push("Incomplete cloud storage configuration: Turso database is configured, but remote cloud storage (Cloudinary) is missing. Refusing silent fallback to ephemeral container disk for PDF storage.");
+      } else if (isCloudinaryActive && !isTursoActive) {
+        errors.push("Incomplete cloud storage configuration: Cloudinary storage is configured, but remote cloud database (Turso) is missing. Refusing silent fallback to ephemeral container disk for SQLite.");
+      }
+    }
+
+    const isCloudTarget = dbType === "turso" && storageType === "cloudinary" && isTursoActive && isCloudinaryActive;
+
+    // In cloud mode: validate temporary TTS cache directory creation and writability (fail closed on failure)
+    if (isCloudTarget) {
+      if (!fs.existsSync(uploadDir)) {
+        try {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        } catch (mkdirErr) {
+          errors.push(`Failed to create temporary TTS audio cache directory '${uploadDir}': ${mkdirErr.message}. Ensure path is valid and writable.`);
+        }
+      }
+
+      if (fs.existsSync(uploadDir)) {
+        try {
+          const stat = fs.statSync(uploadDir);
+          if (!stat.isDirectory()) {
+            errors.push(`Temporary TTS audio cache path '${uploadDir}' exists but is not a directory.`);
+          } else if (!this.isDirectoryWritable(uploadDir)) {
+            errors.push(`Temporary TTS audio cache directory '${uploadDir}' is not writable by current process.`);
+          }
+        } catch (statErr) {
+          errors.push(`Failed to verify temporary TTS audio cache directory '${uploadDir}': ${statErr.message}`);
+        }
+      }
+
+      // If full remote cloud storage mode is valid and error-free, succeed immediately
+      if (errors.length === 0) {
+        return {
+          ok: true,
+          mode: "cloud",
+          persistenceType: "remote",
+          isPersistent: true,
+          isRemotePersistent: true,
+          isLocalPersistent: false,
+          isDiskPersistent: false,
+          database: "turso",
+          storage: "cloudinary",
+          uploadDir
+        };
+      }
+    }
 
     // In production, persistent storage is mandatory unless explicitly bypassed in testing options
     const requirePersistentDisk = options.requirePersistentDisk ?? (
@@ -333,8 +466,8 @@ export class StoragePreflight {
 
     const targetsPersistentMount = (dbFile && dbFile.includes(mountRoot)) || (uploadDir && uploadDir.includes(mountRoot));
 
-    // 1. Local development / test mode with standard local paths
-    if (!requirePersistentDisk && !targetsPersistentMount) {
+    // Local development / test mode with standard local paths
+    if (!requirePersistentDisk && !targetsPersistentMount && errors.length === 0) {
       const localDbDir = path.dirname(dbFile);
       if (!fs.existsSync(localDbDir)) {
         fs.mkdirSync(localDbDir, { recursive: true });
@@ -345,15 +478,17 @@ export class StoragePreflight {
       return {
         ok: true,
         mode: "local",
+        persistenceType: "none",
         isPersistent: false,
+        isRemotePersistent: false,
+        isLocalPersistent: false,
+        isDiskPersistent: false,
         dbFile,
         uploadDir
       };
     }
 
-    // 2. Production or explicit persistent disk requirement
-    const errors = [];
-
+    // Production with local disk or failed cloud validation
     // Verify paths target the persistent mount in production (preventing silent fallback to ephemeral)
     if (isProduction || requirePersistentDisk) {
       if (!this.isPathContained(mountRoot, dbFile)) {
@@ -430,10 +565,15 @@ export class StoragePreflight {
     }
 
     if (errors.length > 0) {
+      const failedMode = isCloudTarget || (dbType === "turso" || storageType === "cloudinary") ? "cloud" : "persistent";
       return {
         ok: false,
-        mode: "persistent",
+        mode: failedMode,
+        persistenceType: "none",
         isPersistent: false,
+        isRemotePersistent: false,
+        isLocalPersistent: false,
+        isDiskPersistent: false,
         mountRoot,
         errors
       };
@@ -451,7 +591,11 @@ export class StoragePreflight {
     return {
       ok: true,
       mode: "persistent",
+      persistenceType: "disk",
       isPersistent: true,
+      isRemotePersistent: false,
+      isLocalPersistent: true,
+      isDiskPersistent: true,
       mountRoot,
       dbFile,
       uploadDir
@@ -471,7 +615,9 @@ export function runStoragePreflight(options = {}) {
     console.error("====================================================");
     result.errors.forEach((err) => console.error(` - ${err}`));
     console.error("Refusing to boot on ephemeral container storage to prevent silent data loss.");
-    console.error("Please verify that the Render Persistent Disk is attached and mounted at /var/data.");
+    console.error("Please verify that either:");
+    console.error("  1. A dedicated Render Persistent Disk is attached and mounted at /var/data, OR");
+    console.error("  2. Remote Turso database (TURSO_DATABASE_URL, TURSO_AUTH_TOKEN) and Cloudinary (CLOUDINARY_URL or credentials) are configured.");
     console.error("====================================================");
 
     if (options.exitOnFailure !== false) {
@@ -480,10 +626,17 @@ export function runStoragePreflight(options = {}) {
     throw new Error(`Storage preflight failed: ${result.errors.join("; ")}`);
   }
 
-  if (result.isPersistent) {
+  if (result.mode === "cloud") {
+    console.log(" [Storage Preflight] Verified remote persistent cloud storage mode:");
+    console.log("   - Database: Turso (@libsql/client remote SQLite)");
+    console.log("   - File Storage: Cloudinary (authenticated cloud stream)");
+    console.log(`   - Local Ephemeral Audio Cache: ${result.uploadDir}`);
+    console.log("   - Persistence: Remote (isRemotePersistent=true, isDiskPersistent=false)");
+  } else if (result.isPersistent) {
     console.log(` [Storage Preflight] Verified persistent mount at ${result.mountRoot}`);
     console.log(` [Storage Preflight] Canonical DB path: ${result.dbFile}`);
     console.log(` [Storage Preflight] Canonical Uploads path: ${result.uploadDir}`);
+    console.log("   - Persistence: Local Block Disk (isDiskPersistent=true, isRemotePersistent=false)");
   }
 
   return result;

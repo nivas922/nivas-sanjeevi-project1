@@ -14,10 +14,24 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: DB_TYPE
-        value: sqlite
+        value: turso
+      - key: STORAGE_TYPE
+        value: cloudinary
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
       - key: FRONTEND_URL
         value: https://nivas-sanjeevi-project1-pnb5.vercel.app
       - key: CORS_ORIGIN
         value: https://nivas-sanjeevi-project1-pnb5.vercel.app
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
+      - key: GEMINI_API_KEY
+        sync: false

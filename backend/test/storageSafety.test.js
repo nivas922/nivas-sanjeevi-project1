@@ -913,8 +913,298 @@ tmpfs /var/ephemeral_cache tmpfs rw,nosuid,nodev 0 0
     console.log("✔ TEST 12 PASSED: Isolated restoration safely purges stale WAL/SHM cross-platform and restores intact database.");
   }
 
+  // ----------------------------------------------------
+  // TEST 13: Production Remote Cloud Mode (Turso + Cloudinary) and Fail-Closed Safeguards
+  // ----------------------------------------------------
+  console.log("\n[TEST 13] Production remote cloud mode (Turso + Cloudinary) and fail-closed safeguards");
+  {
+    const missingMountDir = path.join(testDir, "non_existent_var_data");
+    const cloudUploadDir = path.join(testDir, "cloud_ephemeral_uploads");
+
+    // Case 13a: Valid Turso + Valid Cloudinary in Production succeeds in cloud mode without /var/data
+    const validCloudRes = StoragePreflight.validate({
+      nodeEnv: "production",
+      dbType: "turso",
+      storageType: "cloudinary",
+      mountRoot: missingMountDir,
+      uploadDir: cloudUploadDir,
+      tursoUrl: "libsql://learnai-staging-db.turso.io",
+      tursoToken: "valid-turso-jwt-token-production-2026",
+      cloudinaryCloudName: "learnai-cloud",
+      cloudinaryApiKey: "123456789012345",
+      cloudinaryApiSecret: "secret-key-production-test-2026"
+    });
+    assert.strictEqual(validCloudRes.ok, true, "Valid Turso + Cloudinary must succeed in production");
+    assert.strictEqual(validCloudRes.mode, "cloud", "Mode must be 'cloud'");
+    assert.strictEqual(validCloudRes.persistenceType, "remote", "Persistence type must be 'remote'");
+    assert.strictEqual(validCloudRes.isPersistent, true, "Must confirm persistence");
+    assert.strictEqual(validCloudRes.isRemotePersistent, true, "Remote persistence must be true");
+    assert.strictEqual(validCloudRes.isDiskPersistent, false, "Local disk persistence must be false in cloud mode");
+    assert.strictEqual(validCloudRes.isLocalPersistent, false, "Local persistence must be false in cloud mode");
+    assert.strictEqual(validCloudRes.database, "turso");
+    assert.strictEqual(validCloudRes.storage, "cloudinary");
+    assert.ok(fs.existsSync(cloudUploadDir), "Temporary TTS audio cache directory must exist");
+
+    // Supported secure protocols check: libsql://, https://, wss:// pass protocol check
+    for (const protoUrl of [
+      "libsql://db.turso.io",
+      "https://db.turso.io",
+      "wss://db.turso.io"
+    ]) {
+      const protoRes = StoragePreflight.validate({
+        nodeEnv: "production",
+        dbType: "turso",
+        storageType: "cloudinary",
+        mountRoot: missingMountDir,
+        uploadDir: cloudUploadDir,
+        tursoUrl: protoUrl,
+        tursoToken: "valid-token",
+        cloudinaryCloudName: "learnai-cloud",
+        cloudinaryApiKey: "12345",
+        cloudinaryApiSecret: "secret"
+      });
+      assert.strictEqual(protoRes.ok, true, `Supported secure protocol '${protoUrl}' must be accepted`);
+    }
+
+    // Case 13b: Incomplete Turso (URL provided without auth token) MUST fail closed
+    const partialTursoRes = StoragePreflight.validate({
+      nodeEnv: "production",
+      dbType: "turso",
+      storageType: "cloudinary",
+      mountRoot: missingMountDir,
+      uploadDir: cloudUploadDir,
+      tursoUrl: "libsql://learnai-staging-db.turso.io",
+      tursoToken: "",
+      cloudinaryCloudName: "learnai-cloud",
+      cloudinaryApiKey: "123456789012345",
+      cloudinaryApiSecret: "secret-key-production-test-2026"
+    });
+    assert.strictEqual(partialTursoRes.ok, false, "Partial Turso config must fail closed");
+    assert.ok(
+      partialTursoRes.errors.some((e) => e.includes("Incomplete Turso database configuration")),
+      "Must report incomplete Turso configuration"
+    );
+
+    // Case 13c: Incomplete Cloudinary (name without key or secret) MUST fail closed
+    const partialCloudinaryRes = StoragePreflight.validate({
+      nodeEnv: "production",
+      dbType: "turso",
+      storageType: "cloudinary",
+      mountRoot: missingMountDir,
+      uploadDir: cloudUploadDir,
+      tursoUrl: "libsql://learnai-staging-db.turso.io",
+      tursoToken: "valid-token",
+      cloudinaryCloudName: "learnai-cloud",
+      cloudinaryApiKey: "",
+      cloudinaryApiSecret: ""
+    });
+    assert.strictEqual(partialCloudinaryRes.ok, false, "Partial Cloudinary config must fail closed");
+    assert.ok(
+      partialCloudinaryRes.errors.some((e) => e.includes("Incomplete Cloudinary storage configuration")),
+      "Must report incomplete Cloudinary configuration"
+    );
+
+    // Case 13d: Insecure (http, ws) and unsupported protocols MUST fail closed
+    for (const unsupportedUrl of [
+      "http://insecure-turso.example.com",
+      "ws://insecure-ws.example.com",
+      "postgres://invalid-db.example.com",
+      "ftp://invalid-ftp.turso.io",
+      "file:///var/data/learnai.db",
+      "redis://localhost:6379"
+    ]) {
+      const invalidProtoRes = StoragePreflight.validate({
+        nodeEnv: "production",
+        dbType: "turso",
+        storageType: "cloudinary",
+        mountRoot: missingMountDir,
+        uploadDir: cloudUploadDir,
+        tursoUrl: unsupportedUrl,
+        tursoToken: "valid-token",
+        cloudinaryCloudName: "learnai-cloud",
+        cloudinaryApiKey: "12345",
+        cloudinaryApiSecret: "secret"
+      });
+      assert.strictEqual(invalidProtoRes.ok, false, `Insecure/unsupported URL '${unsupportedUrl}' must fail closed`);
+      assert.ok(
+        invalidProtoRes.errors.some(
+          (e) => e.includes("Invalid TURSO_DATABASE_URL protocol") && e.includes("Supported secure protocols: libsql://, https://, wss://.")
+        ),
+        `Must report invalid protocol and list allowed secure protocols for '${unsupportedUrl}'`
+      );
+    }
+
+    // Case 13e: Mismatched DB_TYPE / STORAGE_TYPE validations
+    // Sub-case 1: DB_TYPE='turso' but STORAGE_TYPE='local'
+    const mismatch1 = StoragePreflight.validate({
+      nodeEnv: "production",
+      dbType: "turso",
+      storageType: "local",
+      mountRoot: missingMountDir,
+      uploadDir: cloudUploadDir,
+      tursoUrl: "libsql://learnai-db.turso.io",
+      tursoToken: "valid-token",
+      cloudinaryCloudName: "learnai-cloud",
+      cloudinaryApiKey: "12345",
+      cloudinaryApiSecret: "secret"
+    });
+    assert.strictEqual(mismatch1.ok, false, "DB_TYPE='turso' with STORAGE_TYPE='local' must fail closed");
+    assert.ok(
+      mismatch1.errors.some((e) => e.includes("Mismatched cloud configuration: DB_TYPE is set to 'turso' but STORAGE_TYPE is 'local'")),
+      "Must reject mismatched cloud configuration"
+    );
+
+    // Sub-case 2: STORAGE_TYPE='cloudinary' but DB_TYPE='sqlite'
+    const mismatch2 = StoragePreflight.validate({
+      nodeEnv: "production",
+      dbType: "sqlite",
+      storageType: "cloudinary",
+      mountRoot: missingMountDir,
+      uploadDir: cloudUploadDir,
+      tursoUrl: "libsql://learnai-db.turso.io",
+      tursoToken: "valid-token",
+      cloudinaryCloudName: "learnai-cloud",
+      cloudinaryApiKey: "12345",
+      cloudinaryApiSecret: "secret"
+    });
+    assert.strictEqual(mismatch2.ok, false, "STORAGE_TYPE='cloudinary' with DB_TYPE='sqlite' must fail closed");
+    assert.ok(
+      mismatch2.errors.some((e) => e.includes("Mismatched cloud configuration: STORAGE_TYPE is set to 'cloudinary' but DB_TYPE is 'sqlite'")),
+      "Must reject mismatched cloud configuration"
+    );
+
+    // Sub-case 3: Production without persistent disk and unconfigured DB_TYPE / STORAGE_TYPE
+    const unconfiguredCloudRes = StoragePreflight.validate({
+      nodeEnv: "production",
+      dbType: "sqlite",
+      storageType: "local",
+      mountRoot: missingMountDir,
+      uploadDir: cloudUploadDir,
+      tursoUrl: "libsql://learnai-db.turso.io",
+      tursoToken: "valid-token",
+      cloudinaryCloudName: "learnai-cloud",
+      cloudinaryApiKey: "12345",
+      cloudinaryApiSecret: "secret"
+    });
+    assert.strictEqual(unconfiguredCloudRes.ok, false, "Must not rely only on credentials when DB_TYPE/STORAGE_TYPE not set to cloud");
+    assert.ok(
+      unconfiguredCloudRes.errors.some((e) => e.includes("Production cloud mode requires DB_TYPE='turso'")),
+      "Must require DB_TYPE='turso'"
+    );
+
+    // Case 13f: Temporary TTS Cache Directory Creation & Writability Failure
+    // Sub-case 1: uploadDir is a file instead of a directory
+    const blockerFilePath = path.join(testDir, "cache_dir_blocker.txt");
+    fs.writeFileSync(blockerFilePath, "blocking file", "utf8");
+    const dirIsFileRes = StoragePreflight.validate({
+      nodeEnv: "production",
+      dbType: "turso",
+      storageType: "cloudinary",
+      mountRoot: missingMountDir,
+      uploadDir: blockerFilePath,
+      tursoUrl: "libsql://learnai-db.turso.io",
+      tursoToken: "valid-token",
+      cloudinaryCloudName: "learnai-cloud",
+      cloudinaryApiKey: "12345",
+      cloudinaryApiSecret: "secret"
+    });
+    assert.strictEqual(dirIsFileRes.ok, false, "Must fail closed if uploadDir is a file");
+    assert.ok(
+      dirIsFileRes.errors.some((e) => e.includes("exists but is not a directory")),
+      "Must report that TTS cache path is not a directory"
+    );
+
+    // Sub-case 2: uploadDir unwritable (simulated by stubbing isDirectoryWritable)
+    const origIsWritable = StoragePreflight.isDirectoryWritable;
+    try {
+      StoragePreflight.isDirectoryWritable = (dir) => {
+        if (dir === cloudUploadDir) return false;
+        return origIsWritable.call(StoragePreflight, dir);
+      };
+      const unwritableRes = StoragePreflight.validate({
+        nodeEnv: "production",
+        dbType: "turso",
+        storageType: "cloudinary",
+        mountRoot: missingMountDir,
+        uploadDir: cloudUploadDir,
+        tursoUrl: "libsql://learnai-db.turso.io",
+        tursoToken: "valid-token",
+        cloudinaryCloudName: "learnai-cloud",
+        cloudinaryApiKey: "12345",
+        cloudinaryApiSecret: "secret"
+      });
+      assert.strictEqual(unwritableRes.ok, false, "Must fail closed if uploadDir is not writable");
+      assert.ok(
+        unwritableRes.errors.some((e) => e.includes("is not writable by current process")),
+        "Must report that TTS cache directory is unwritable"
+      );
+    } finally {
+      StoragePreflight.isDirectoryWritable = origIsWritable;
+    }
+
+    // Case 13g: Cloud Mode with Failed Database Connectivity (Readiness Probe Returns 503)
+    {
+      const origDbGet = db.get;
+      try {
+        // Simulate Turso client remote connection failure / query rejection
+        db.get = (sql, params, cb) => {
+          const callback = typeof params === "function" ? params : cb;
+          callback(new Error("LibsqlError: Turso remote database connection timeout: ETIMEDOUT"));
+        };
+
+        const readyResCloudDbFail = await request("/ready");
+        assert.strictEqual(readyResCloudDbFail.status, 503, "Readiness MUST return 503 when Turso remote database query fails");
+        assert.strictEqual(readyResCloudDbFail.data.ready, false, "ready must be false");
+        assert.strictEqual(readyResCloudDbFail.data.status, "unready", "status must be unready");
+        assert.strictEqual(readyResCloudDbFail.data.error, "Database is not ready or unresponsive.");
+        assert.strictEqual(readyResCloudDbFail.data.details, undefined, "Must NOT leak Turso connection details or credentials");
+      } finally {
+        db.get = origDbGet;
+      }
+    }
+
+    // Case 13h: Local development with standard settings continues to pass cleanly
+    const localDevRes = StoragePreflight.validate({
+      nodeEnv: "development",
+      dbType: "sqlite",
+      storageType: "local",
+      dbFile: path.join(testDir, "dev_db", "learnai.db"),
+      uploadDir: path.join(testDir, "dev_uploads"),
+      requirePersistentDisk: false
+    });
+    assert.strictEqual(localDevRes.ok, true, "Local development must pass cleanly");
+    assert.strictEqual(localDevRes.mode, "local");
+    assert.strictEqual(localDevRes.persistenceType, "none");
+    assert.strictEqual(localDevRes.isPersistent, false);
+    assert.strictEqual(localDevRes.isRemotePersistent, false);
+    assert.strictEqual(localDevRes.isDiskPersistent, false);
+
+    // Case 13i: Production SQLite without persistent disk continues to fail closed
+    const prodSqliteFailRes = StoragePreflight.validate({
+      nodeEnv: "production",
+      dbType: "sqlite",
+      storageType: "local",
+      mountRoot: missingMountDir,
+      dbFile: path.join(missingMountDir, "db", "learnai.db"),
+      uploadDir: path.join(missingMountDir, "uploads"),
+      requirePersistentDisk: true,
+      tursoUrl: "",
+      tursoToken: "",
+      cloudinaryCloudName: "",
+      cloudinaryApiKey: "",
+      cloudinaryApiSecret: ""
+    });
+    assert.strictEqual(prodSqliteFailRes.ok, false, "Production SQLite without persistent disk must fail closed");
+    assert.ok(
+      prodSqliteFailRes.errors.some((e) => e.includes("Production cloud mode requires DB_TYPE='turso'")),
+      "Must report missing cloud mode / persistent disk"
+    );
+
+    console.log("✔ TEST 13 PASSED: Production remote cloud mode (Turso + Cloudinary), protocol allowlist, DB_TYPE/STORAGE_TYPE enforcement, TTS cache writability, cloud DB disconnect probe, and local parity verified.");
+  }
+
   console.log("\n==================================================");
-  console.log("🎉 ALL 12 STORAGE SAFETY TESTS PASSED FLAWLESSLY!");
+  console.log("🎉 ALL 13 STORAGE SAFETY TESTS PASSED FLAWLESSLY!");
   console.log("==================================================");
 } finally {
   await teardown();
