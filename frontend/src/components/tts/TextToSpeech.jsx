@@ -10,7 +10,8 @@ import {
   Sparkles,
   Info,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Loader2
 } from "lucide-react";
 import { speechService } from "../../services/speechService";
 import { useToast } from "../../context/ToastContext";
@@ -22,11 +23,14 @@ export const TextToSpeech = ({
   initialLang = "en",
   showVoiceSelector = true,
   compact = false,
+  variant = "default",
   className = ""
 }) => {
   const { showWarning, showError } = useToast();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [playbackError, setPlaybackError] = useState(null);
   const [rate, setRate] = useState(1.0);
   const [selectedLang, setSelectedLang] = useState(initialLang || "en");
   const [allGroupedVoices, setAllGroupedVoices] = useState([]);
@@ -41,7 +45,9 @@ export const TextToSpeech = ({
     speechService.stop();
     setIsPlaying(false);
     setIsPaused(false);
+    setIsLoading(false);
     setPlaybackMode(null);
+    setPlaybackError(null);
   }, [text]);
 
   // React to initialLang changes from parent
@@ -50,7 +56,9 @@ export const TextToSpeech = ({
       speechService.stop();
       setIsPlaying(false);
       setIsPaused(false);
+      setIsLoading(false);
       setPlaybackMode(null);
+      setPlaybackError(null);
       setSelectedLang(initialLang);
     }
   }, [initialLang]);
@@ -99,11 +107,13 @@ export const TextToSpeech = ({
     }
   };
 
-  const handleLanguageTabClick = (langCode) => {
+  const handleLanguageChange = (langCode) => {
     speechService.stop();
     setIsPlaying(false);
     setIsPaused(false);
+    setIsLoading(false);
     setPlaybackMode(null);
+    setPlaybackError(null);
     setSelectedLang(langCode);
 
     const targetGroup = allGroupedVoices.find((g) => g.langCode === langCode);
@@ -119,7 +129,7 @@ export const TextToSpeech = ({
   const bcp47 = speechService.getBcp47Code(selectedLang);
   const hasBrowserVoice = speechService.hasVoiceForLanguage(selectedLang);
 
-  const handlePlay = () => {
+  const handlePlay = async () => {
     if (!text || text.trim() === "") {
       showWarning("No text available to read.");
       return;
@@ -132,43 +142,57 @@ export const TextToSpeech = ({
       return;
     }
 
-    speechService.speak({
-      text,
-      lang: selectedLang,
-      rate,
-      voiceName: selectedVoiceName,
-      onStart: (info) => {
-        setIsPlaying(true);
-        setIsPaused(false);
-        setPlaybackMode(info?.mode || "browser");
-        setPlaybackVoiceLabel(info?.voice || "");
-      },
-      onPause: () => {
-        setIsPaused(true);
-        setIsPlaying(false);
-      },
-      onResume: () => {
-        setIsPaused(false);
-        setIsPlaying(true);
-      },
-      onEnd: () => {
-        setIsPlaying(false);
-        setIsPaused(false);
-        setPlaybackMode(null);
-      },
-      onError: (err) => {
-        setIsPlaying(false);
-        setIsPaused(false);
-        setPlaybackMode(null);
-        if (err?.code === "VOICE_UNAVAILABLE") {
-          showError(
-            `A voice for ${currentLangObj.name} (${bcp47}) is not installed on this system. Audio cannot be played using an English voice. Please install the ${currentLangObj.name} language and speech pack in Windows Settings.`
-          );
-        } else {
-          showError(err?.message || "Audio playback error occurred.");
+    setPlaybackError(null);
+    setIsLoading(true);
+
+    try {
+      await speechService.speak({
+        text,
+        lang: selectedLang,
+        rate,
+        voiceName: selectedVoiceName,
+        onStart: (info) => {
+          setIsLoading(false);
+          setIsPlaying(true);
+          setIsPaused(false);
+          setPlaybackMode(info?.mode || "browser");
+          setPlaybackVoiceLabel(info?.voice || "");
+        },
+        onPause: () => {
+          setIsLoading(false);
+          setIsPaused(true);
+          setIsPlaying(false);
+        },
+        onResume: () => {
+          setIsLoading(false);
+          setIsPaused(false);
+          setIsPlaying(true);
+        },
+        onEnd: () => {
+          setIsLoading(false);
+          setIsPlaying(false);
+          setIsPaused(false);
+          setPlaybackMode(null);
+        },
+        onError: (err) => {
+          setIsLoading(false);
+          setIsPlaying(false);
+          setIsPaused(false);
+          setPlaybackMode(null);
+          const errorMsg =
+            err?.code === "VOICE_UNAVAILABLE"
+              ? `A voice for ${currentLangObj.name} (${bcp47}) is not installed on this system. Audio cannot be played using an English voice. Please install the ${currentLangObj.name} language and speech pack in Windows Settings.`
+              : err?.message || "Audio playback error occurred.";
+          setPlaybackError(errorMsg);
+          showError(errorMsg);
         }
-      }
-    });
+      });
+    } catch (err) {
+      setIsLoading(false);
+      setIsPlaying(false);
+      setIsPaused(false);
+      setPlaybackError(err?.message || "Failed to start audio playback.");
+    }
   };
 
   const handlePause = () => {
@@ -181,6 +205,7 @@ export const TextToSpeech = ({
     speechService.stop();
     setIsPlaying(false);
     setIsPaused(false);
+    setIsLoading(false);
     setPlaybackMode(null);
   };
 
@@ -188,11 +213,14 @@ export const TextToSpeech = ({
     speechService.stop();
     setIsPlaying(false);
     setIsPaused(false);
+    setIsLoading(false);
     setPlaybackMode(null);
+    setPlaybackError(null);
     setRate(1.0);
   };
 
-  if (compact) {
+  // Compact inline pill variant (e.g. within summary modals)
+  if (compact || variant === "compact") {
     return (
       <div
         className={`inline-flex items-center gap-1.5 p-1 rounded-xl bg-slate-100/90 border border-slate-200 shadow-soft-sm ${className}`}
@@ -201,10 +229,11 @@ export const TextToSpeech = ({
           <button
             type="button"
             onClick={handlePlay}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-all shadow-soft-sm cursor-pointer"
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-all shadow-soft-sm cursor-pointer disabled:opacity-50"
             title={`Listen in ${currentLangObj.name} (${bcp47})`}
           >
-            <Play className="w-3.5 h-3.5 fill-current" />
+            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
             <span>Listen ({currentLangObj.name})</span>
           </button>
         ) : (
@@ -245,6 +274,209 @@ export const TextToSpeech = ({
     );
   }
 
+  // Compact Speech Narration section embedded directly inside the Translated Text Box
+  if (variant === "translated-box") {
+    const targetVoices = speechService.getVoicesForLanguage(selectedLang);
+    return (
+      <div className={`mt-3 pt-3 border-t border-slate-100 space-y-3 ${className}`}>
+        {/* Header & Status Indicator */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div
+              className={`p-1.5 rounded-xl transition-all ${
+                isPlaying
+                  ? "bg-brand-600 text-white shadow-soft-xs animate-pulse"
+                  : "bg-brand-50 text-brand-600"
+              }`}
+            >
+              <Volume2 className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                Speech Narration
+              </span>
+              <p className="text-[11px] text-slate-400 font-medium">
+                Audio voice reading for {currentLangObj.name} ({bcp47})
+              </p>
+            </div>
+          </div>
+
+          {/* Live Status Badge */}
+          <div className="flex items-center gap-1.5">
+            {isLoading && (
+              <span className="flex items-center gap-1 text-[11px] font-bold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full border border-brand-200">
+                <Loader2 className="w-3 h-3 animate-spin text-brand-600" />
+                <span>Preparing speech...</span>
+              </span>
+            )}
+            {!isLoading && isPlaying && (
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 animate-pulse shadow-soft-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                {playbackMode === "backend"
+                  ? `🔊 Cloud Audio (${currentLangObj.name})`
+                  : `🔊 Playing (${currentLangObj.name})`}
+              </span>
+            )}
+            {!isLoading && isPaused && (
+              <span className="flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                ⏸ Paused
+              </span>
+            )}
+            {!isLoading && !isPlaying && !isPaused && (
+              <span className="flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200/60">
+                {hasBrowserVoice ? (
+                  <span>⏹ Ready ({bcp47})</span>
+                ) : (
+                  <span className="text-emerald-700 font-semibold">☁️ Cloud Audio Ready</span>
+                )}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Error message if any */}
+        {playbackError && (
+          <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start justify-between gap-2 animate-in fade-in">
+            <div className="flex items-start gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <p className="font-medium text-[11px] leading-snug">{playbackError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPlaybackError(null)}
+              className="text-rose-500 hover:text-rose-800 text-xs font-bold px-1 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Playback Controls & Speed Buttons */}
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/80">
+          <div className="flex items-center gap-2">
+            {!isPlaying ? (
+              <button
+                type="button"
+                onClick={handlePlay}
+                disabled={isLoading || !text || text.trim() === ""}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-soft-xs hover:shadow-soft-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title={`Play audio narration in ${currentLangObj.name}`}
+              >
+                {isLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                )}
+                <span>{isPaused ? "Resume" : "Play Narration"}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handlePause}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-soft-xs transition-all cursor-pointer"
+                title="Pause audio narration"
+              >
+                <Pause className="w-3.5 h-3.5 fill-current" />
+                <span>Pause</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleStop}
+              disabled={!isPlaying && !isPaused && !isLoading}
+              className="flex items-center gap-1 px-3 py-2 rounded-xl bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-xs border border-slate-200 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-soft-xs"
+              title="Stop audio narration"
+            >
+              <Square className="w-3 h-3 fill-current" />
+              <span>Stop</span>
+            </button>
+          </div>
+
+          {/* Speed Presets */}
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+              Speed:
+            </span>
+            {speedOptions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setRate(s)}
+                className={`px-2 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                  rate === s
+                    ? "bg-brand-600 text-white shadow-soft-xs"
+                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Speech Language & Voice Selector Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
+          {/* Speech Language Selector */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <Languages className="w-3 h-3 text-brand-600" />
+              <span>Speech Language:</span>
+            </label>
+            <select
+              value={selectedLang}
+              onChange={(e) => handleLanguageChange(e.target.value)}
+              className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-soft-xs cursor-pointer"
+            >
+              {SUPPORTED_LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.flag} {l.name} ({l.native})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Voice Profile Selector */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-brand-600" />
+                <span>Voice:</span>
+              </span>
+              {!hasBrowserVoice && (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                  Cloud TTS Active
+                </span>
+              )}
+            </label>
+            <select
+              value={selectedVoiceName}
+              onChange={handleVoiceChange}
+              disabled={targetVoices.length === 0}
+              className={`w-full p-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-soft-xs ${
+                targetVoices.length > 0
+                  ? "bg-white border-slate-200 text-slate-800 cursor-pointer"
+                  : "bg-slate-100 border-slate-200 text-slate-500 italic cursor-not-allowed"
+              }`}
+            >
+              {targetVoices.length > 0 ? (
+                targetVoices.map((v, i) => (
+                  <option key={i} value={v.name}>
+                    {v.name}
+                  </option>
+                ))
+              ) : (
+                <option value="">
+                  ☁️ Authentic {currentLangObj.name} AI Cloud Voice
+                </option>
+              )}
+            </select>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-soft-sm space-y-4 ${className}`}
@@ -270,7 +502,13 @@ export const TextToSpeech = ({
 
         {/* Live Status indicator */}
         <div className="flex items-center gap-2">
-          {isPlaying && (
+          {isLoading && (
+            <span className="flex items-center gap-1.5 text-xs font-bold text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600" />
+              <span>Preparing speech...</span>
+            </span>
+          )}
+          {!isLoading && isPlaying && (
             <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shadow-soft-xs animate-pulse">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
               {playbackMode === "backend"
@@ -278,12 +516,12 @@ export const TextToSpeech = ({
                 : `🔊 Reading Aloud in ${currentLangObj.name} (${playbackVoiceLabel || bcp47})`}
             </span>
           )}
-          {isPaused && (
+          {!isLoading && isPaused && (
             <span className="flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
               ⏸ Paused
             </span>
           )}
-          {!isPlaying && !isPaused && (
+          {!isLoading && !isPlaying && !isPaused && (
             <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
               {hasBrowserVoice ? (
                 <span>⏹ Ready to Play ({bcp47})</span>
@@ -295,7 +533,7 @@ export const TextToSpeech = ({
         </div>
       </div>
 
-      {/* Voice Availability Warning Notice (Requirement 5) */}
+      {/* Voice Availability Warning Notice */}
       {!hasBrowserVoice && (
         <div className="rounded-2xl bg-amber-50/90 border border-amber-200/90 p-4 space-y-2 text-xs text-amber-900">
           <div className="flex items-start gap-2.5">
@@ -342,7 +580,7 @@ export const TextToSpeech = ({
             <button
               key={lang.code}
               type="button"
-              onClick={() => handleLanguageTabClick(lang.code)}
+              onClick={() => handleLanguageChange(lang.code)}
               className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
                 selectedLang === lang.code
                   ? "bg-brand-600 text-white shadow-soft-sm scale-105"
@@ -365,9 +603,10 @@ export const TextToSpeech = ({
               <button
                 type="button"
                 onClick={handlePlay}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs sm:text-sm shadow-soft-sm hover:shadow-glow-brand transition-all cursor-pointer"
+                disabled={isLoading}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs sm:text-sm shadow-soft-sm hover:shadow-glow-brand transition-all cursor-pointer disabled:opacity-50"
               >
-                <Play className="w-4 h-4 fill-current" />
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
                 <span>
                   {isPaused
                     ? "Resume"
@@ -388,7 +627,7 @@ export const TextToSpeech = ({
             <button
               type="button"
               onClick={handleStop}
-              disabled={!isPlaying && !isPaused}
+              disabled={!isPlaying && !isPaused && !isLoading}
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-xs sm:text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               <Square className="w-3.5 h-3.5 fill-current" />

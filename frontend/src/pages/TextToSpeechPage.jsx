@@ -265,22 +265,22 @@ export const TextToSpeechPage = () => {
             )}
           </div>
 
-          <div className="pt-2 text-right">
-            <span className="text-[11px] font-semibold text-slate-400">
-              {translatedText ? `${translatedText.split(/\s+/).filter(Boolean).length} words` : "0 words"}
-            </span>
+          <div>
+            <div className="pt-2 text-right">
+              <span className="text-[11px] font-semibold text-slate-400">
+                {translatedText ? `${translatedText.split(/\s+/).filter(Boolean).length} words` : "0 words"}
+              </span>
+            </div>
+
+            {/* Compact Speech Narration Section inside Translated Text Panel */}
+            <TextToSpeech
+              text={translatedText}
+              initialLang={targetLang}
+              variant="translated-box"
+            />
           </div>
         </div>
       </div>
-
-      {/* Embedded Audio Speech Controller for Translated Text */}
-      <TextToSpeech
-        text={translatedText}
-        title={`Audio Speech Narration: ${targetLangObj.name} (${targetLangObj.native})`}
-        initialLang={targetLang}
-        showVoiceSelector={true}
-        compact={false}
-      />
     </div>
   );
 };
