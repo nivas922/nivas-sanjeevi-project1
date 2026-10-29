@@ -22,7 +22,6 @@ import { useToast } from "../context/ToastContext";
 import { api } from "../services/api";
 import { studyTracker } from "../services/studyTracker";
 import { EmptyState } from "../components/common/EmptyState";
-import { DEPARTMENTS } from "../data/translations";
 
 export const AIQuiz = () => {
   const [searchParams] = useSearchParams();
@@ -38,15 +37,53 @@ export const AIQuiz = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Custom Quiz Generator Panel states
+  // Available textbooks & Textbook Selection states
+  const [availableBooks, setAvailableBooks] = useState(textbooks || []);
+  const [selectedBookId, setSelectedBookId] = useState("");
+  const [questionCount, setQuestionCount] = useState("5");
+  const [difficulty, setDifficulty] = useState("Intermediate");
+  const [isGenerating, setIsGenerating] = useState(false);
   const [showConfigPanel, setShowConfigPanel] = useState(false);
-  const [customSubject, setCustomSubject] = useState("Computer Science & Engineering");
-  const [customTopic, setCustomTopic] = useState("Core Concepts & System Architecture");
-  const [customDifficulty, setCustomDifficulty] = useState("Intermediate");
-  const [customQuestionInput, setCustomQuestionInput] = useState("5");
-  const [customNumberValue, setCustomNumberValue] = useState(7);
-  const [isGeneratingCustom, setIsGeneratingCustom] = useState(false);
 
+  // 1. Fetch latest textbooks from API on mount
+  useEffect(() => {
+    let isMounted = true;
+    const fetchBooks = async () => {
+      try {
+        const books = await api.getTextbooks();
+        if (isMounted && Array.isArray(books) && books.length > 0) {
+          setAvailableBooks(books);
+        }
+      } catch (e) {
+        console.warn("Could not fetch textbooks for quiz generation:", e.message);
+      }
+    };
+    fetchBooks();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Update available books if context textbooks change
+  useEffect(() => {
+    if (textbooks && textbooks.length > 0) {
+      setAvailableBooks(textbooks);
+    }
+  }, [textbooks]);
+
+  // 2. Pre-select textbook based on search params, currentBook, or first available
+  useEffect(() => {
+    const paramBookId = searchParams.get("textbookId") || searchParams.get("bookId");
+    if (paramBookId && availableBooks.some((b) => b.id === paramBookId)) {
+      setSelectedBookId(paramBookId);
+    } else if (currentBook && availableBooks.some((b) => b.id === currentBook.id)) {
+      setSelectedBookId(currentBook.id);
+    } else if (availableBooks.length > 0 && (!selectedBookId || !availableBooks.some((b) => b.id === selectedBookId))) {
+      setSelectedBookId(availableBooks[0].id);
+    }
+  }, [searchParams, availableBooks, currentBook, selectedBookId]);
+
+  // 3. Load active quiz on mount or URL change
   useEffect(() => {
     const loadQuiz = async () => {
       setLoading(true);
@@ -71,22 +108,9 @@ export const AIQuiz = () => {
       if (quizzes.length > 0) {
         setQuiz(quizzes[0]);
         setTimeLeft(quizzes[0].timeLimitMinutes * 60);
-      } else if (textbooks && textbooks.length > 0) {
-        // Auto generate foundational quiz from user's uploaded textbook
-        try {
-          const autoQuiz = await api.generateQuiz({
-            textbookId: textbooks[0].id,
-            topic: textbooks[0].subject || "Core Concepts",
-            subject: textbooks[0].title,
-            difficulty: "Intermediate",
-            questionCount: 5
-          });
-          setQuiz(autoQuiz);
-          setTimeLeft(autoQuiz.timeLimitMinutes * 60);
-          refreshLearningData();
-        } catch (e) {
-          console.warn("Could not auto-generate quiz:", e.message);
-        }
+      } else {
+        // When no quiz exists, open textbook quiz generator panel by default
+        setShowConfigPanel(true);
       }
       setLoading(false);
     };
@@ -94,7 +118,7 @@ export const AIQuiz = () => {
     loadQuiz();
   }, [quizId, quizzes]);
 
-  // Countdown timer
+  // 4. Countdown timer
   useEffect(() => {
     if (!quiz || timeLeft <= 0) return;
     const interval = setInterval(() => {
@@ -110,7 +134,7 @@ export const AIQuiz = () => {
     return () => clearInterval(interval);
   }, [timeLeft, quiz]);
 
-  // Track active study time when taking quiz
+  // 5. Track active study time when taking quiz
   useEffect(() => {
     if (quiz && !loading) {
       studyTracker.startSession("quiz");
@@ -120,50 +144,54 @@ export const AIQuiz = () => {
     };
   }, [quiz, loading]);
 
-  const getEffectiveCustomCount = () => {
-    if (customQuestionInput === "custom") {
-      const parsed = parseInt(customNumberValue, 10);
-      return isNaN(parsed) || parsed < 1 ? 5 : Math.min(parsed, 30);
-    }
-    return parseInt(customQuestionInput, 10) || 5;
-  };
-
-  const handleGenerateCustomQuiz = async (e) => {
-    e.preventDefault();
-    setIsGeneratingCustom(true);
-    const count = getEffectiveCustomCount();
-
-    const targetBook = currentBook || (textbooks && textbooks.length > 0 ? textbooks[0] : null);
-    if (!targetBook) {
-      showWarning("Please upload a textbook first to generate an AI quiz.");
-      setIsGeneratingCustom(false);
+  // 6. Generate Quiz from Selected Textbook
+  const handleGenerateQuizFromTextbook = async (e) => {
+    if (e) e.preventDefault();
+    if (!selectedBookId) {
+      showWarning("Please select a textbook first.");
       return;
     }
 
+    const selectedBook = availableBooks.find((b) => b.id === selectedBookId);
+    if (!selectedBook) {
+      showWarning("Selected textbook could not be found.");
+      return;
+    }
+
+    setIsGenerating(true);
     try {
+      const parsedCount = parseInt(questionCount, 10) || 5;
       const newQuiz = await api.generateQuiz({
-        textbookId: targetBook.id,
-        topic: customTopic || targetBook.subject || "Academic Fundamentals",
-        subject: customSubject || targetBook.title || "Engineering",
-        difficulty: customDifficulty,
-        questionCount: count
+        textbookId: selectedBook.id,
+        bookId: selectedBook.id,
+        topic: selectedBook.subject || selectedBook.title || "Academic Concepts",
+        subject: selectedBook.title || selectedBook.subject || "Textbook",
+        difficulty: difficulty || "Intermediate",
+        questionCount: parsedCount
       });
+
+      if (!newQuiz || !Array.isArray(newQuiz.questions) || newQuiz.questions.length === 0) {
+        throw new Error("No questions were generated from this textbook. Please try again.");
+      }
 
       refreshLearningData();
       setQuiz(newQuiz);
       setCurrentIndex(0);
       setSelectedAnswers({});
-      setTimeLeft(newQuiz.timeLimitMinutes * 60);
+      const limit = newQuiz.timeLimitMinutes || Math.max(5, Math.ceil(newQuiz.questions.length * 1.5));
+      setTimeLeft(limit * 60);
       setShowConfigPanel(false);
-      showSuccess(`Generated customized quiz with ${count} questions!`);
+      showSuccess(`Successfully generated ${newQuiz.questions.length}-question AI quiz from "${selectedBook.title}"!`);
       navigate(`/quiz?id=${newQuiz.id}`);
     } catch (err) {
-      showWarning("Failed to generate custom quiz.");
+      const errMsg = err?.message || "Failed to generate quiz from textbook content.";
+      showWarning(errMsg);
     } finally {
-      setIsGeneratingCustom(false);
+      setIsGenerating(false);
     }
   };
 
+  // 7. Submit Quiz Handler
   const handleSubmitQuiz = async () => {
     if (!quiz) return;
     const totalQuestions = quiz.questions.length;
@@ -205,7 +233,7 @@ export const AIQuiz = () => {
     return (
       <div className="py-20 text-center">
         <Loader2 className="w-8 h-8 text-brand-600 animate-spin mx-auto mb-2" />
-        <p className="text-slate-500 font-semibold">Generating questions from your textbook...</p>
+        <p className="text-slate-500 font-semibold">Loading quiz experience...</p>
       </div>
     );
   }
@@ -236,14 +264,20 @@ export const AIQuiz = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300 pb-12">
-      {/* Top Action & Custom Quiz Generator Bar */}
+      {/* Top Action & Textbook Quiz Generator Bar */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-soft-sm space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-xs font-bold uppercase tracking-wider text-brand-600 bg-brand-50 px-2.5 py-0.5 rounded-lg">
-                {quiz?.subject || "Adaptive Quiz"}
+                {quiz?.subject || "AI Textbook Quiz"}
               </span>
+              {quiz?.bookTitle && (
+                <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                  <BookOpen className="w-3 h-3 text-brand-600" />
+                  {quiz.bookTitle}
+                </span>
+              )}
               <span className="text-xs font-semibold text-slate-400">
                 Difficulty: {quiz?.difficulty || "Intermediate"} • {totalQuestions} Questions
               </span>
@@ -253,110 +287,157 @@ export const AIQuiz = () => {
             </h1>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button
               variant="outline"
               size="sm"
               icon={Sliders}
               onClick={() => setShowConfigPanel(!showConfigPanel)}
+              id="toggle-quiz-generator-btn"
             >
-              {showConfigPanel ? "Close Generator" : "⚙️ Custom Quiz Options"}
+              {showConfigPanel ? "Close Generator" : "⚙️ Generate Quiz from Textbook"}
             </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              icon={Send}
-              loading={isSubmitting}
-              onClick={handleSubmitQuiz}
-              className="shadow-soft-sm"
-            >
-              Submit Quiz
-            </Button>
+            {quiz && (
+              <Button
+                variant="danger"
+                size="sm"
+                icon={Send}
+                loading={isSubmitting}
+                onClick={handleSubmitQuiz}
+                className="shadow-soft-sm"
+              >
+                Submit Quiz
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Expandable Custom Quiz Config Panel */}
-        {showConfigPanel && (
-          <form onSubmit={handleGenerateCustomQuiz} className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4 animate-in fade-in slide-in-from-top-2">
+        {/* Expandable / Visible Textbook Quiz Generator Panel */}
+        {(showConfigPanel || !quiz) && (
+          <form
+            onSubmit={handleGenerateQuizFromTextbook}
+            className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4 animate-in fade-in slide-in-from-top-2"
+          >
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-brand-600" />
-                <span>Configure Custom Number of Quiz Questions</span>
+                <span>Generate AI Quiz from Selected Textbook</span>
               </h4>
-              <span className="text-[11px] text-slate-500 font-medium">Type any question count from 1 to 30</span>
+              <span className="text-[11px] text-slate-500 font-medium">
+                Grounded in actual textbook content
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 block mb-1">
-                  Topic / Subject
+            {/* Error or Loading Banner during generation */}
+            {isGenerating && (
+              <div className="p-3.5 bg-brand-50 border border-brand-200 rounded-xl flex items-center gap-3">
+                <Loader2 className="w-4 h-4 text-brand-600 animate-spin shrink-0" />
+                <p className="text-xs font-semibold text-brand-900">
+                  Retrieving textbook chapters and generating AI quiz questions... Please wait.
+                </p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* 1. Select Textbook */}
+              <div className="sm:col-span-2 lg:col-span-1">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5 flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-brand-600" />
+                  <span>Select Textbook</span>
                 </label>
-                <input
-                  type="text"
-                  value={customTopic}
-                  onChange={(e) => setCustomTopic(e.target.value)}
-                  placeholder="e.g. TCP/IP Handshake, OOP"
-                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
+                {availableBooks.length > 0 ? (
+                  <select
+                    id="select-textbook-dropdown"
+                    value={selectedBookId}
+                    onChange={(e) => setSelectedBookId(e.target.value)}
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  >
+                    {availableBooks.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.title} {b.subject ? `• ${b.subject}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center justify-between">
+                    <span>No textbooks uploaded.</span>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/upload")}
+                      className="text-xs font-bold text-brand-700 underline hover:text-brand-800 cursor-pointer"
+                    >
+                      Upload
+                    </button>
+                  </div>
+                )}
               </div>
 
+              {/* 2. Number of Questions (5, 10, 15, 20) */}
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 block mb-1">
-                  Difficulty Level
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-brand-600" />
+                  <span>Number of Questions</span>
                 </label>
                 <select
-                  value={customDifficulty}
-                  onChange={(e) => setCustomDifficulty(e.target.value)}
+                  id="select-question-count"
+                  value={questionCount}
+                  onChange={(e) => setQuestionCount(e.target.value)}
                   className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
-                  <option value="Beginner">Beginner (Foundational)</option>
-                  <option value="Intermediate">Intermediate (Standard)</option>
-                  <option value="Advanced">Advanced (Challenge)</option>
+                  <option value="5">5 Questions</option>
+                  <option value="10">10 Questions</option>
+                  <option value="15">15 Questions</option>
+                  <option value="20">20 Questions</option>
                 </select>
               </div>
 
-              {/* Number of Questions Selector + Custom Input */}
+              {/* 3. Difficulty Level (Easy, Intermediate, Hard) */}
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 block mb-1">
-                  Number of Questions
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5 flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-brand-600" />
+                  <span>Difficulty Level</span>
                 </label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={customQuestionInput}
-                    onChange={(e) => setCustomQuestionInput(e.target.value)}
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  >
-                    <option value="5">5 Questions</option>
-                    <option value="10">10 Questions</option>
-                    <option value="15">15 Questions</option>
-                    <option value="20">20 Questions</option>
-                    <option value="custom">✍️ Custom Number...</option>
-                  </select>
+                <select
+                  id="select-difficulty"
+                  value={difficulty}
+                  onChange={(e) => setDifficulty(e.target.value)}
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="Easy">Easy (Foundational)</option>
+                  <option value="Intermediate">Intermediate (Standard)</option>
+                  <option value="Hard">Hard (Challenge)</option>
+                </select>
+              </div>
 
-                  {customQuestionInput === "custom" && (
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={customNumberValue}
-                      onChange={(e) => setCustomNumberValue(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                      placeholder="Count"
-                      className="w-20 p-2 bg-white border-2 border-brand-500 text-slate-900 font-black text-xs rounded-xl focus:outline-none"
-                    />
-                  )}
+              {/* 4. Question Type (MCQ) */}
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-brand-600" />
+                  <span>Question Type</span>
+                </label>
+                <div className="p-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-between">
+                  <span>Multiple-choice (MCQs)</span>
+                  <span className="text-[10px] text-brand-700 bg-brand-50 font-bold px-1.5 py-0.5 rounded border border-brand-200">
+                    4 Options
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-200/80">
+              <p className="text-[11px] text-slate-500">
+                Each question includes 4 options, 1 verified correct answer, and an academic explanation.
+              </p>
               <Button
                 type="submit"
                 variant="primary"
                 size="sm"
                 icon={Sparkles}
-                loading={isGeneratingCustom}
+                loading={isGenerating}
+                disabled={availableBooks.length === 0 || isGenerating}
+                id="generate-quiz-btn"
               >
-                Generate & Start {getEffectiveCustomCount()}-Question Quiz
+                Generate Quiz from Textbook
               </Button>
             </div>
           </form>
@@ -422,13 +503,21 @@ export const AIQuiz = () => {
             )}
           </div>
         </>
+      ) : availableBooks.length === 0 ? (
+        <EmptyState
+          icon={BookOpen}
+          title="No Textbooks Available"
+          description="Please upload a textbook to generate an AI quiz based on its actual content."
+          actionText="Upload Textbook"
+          onAction={() => navigate("/upload")}
+        />
       ) : (
         <EmptyState
           icon={HelpCircle}
-          title="No questions generated"
-          description="Click 'Custom Quiz Options' above to generate questions on any topic."
-          actionText="Open Quiz Options"
-          onAction={() => setShowConfigPanel(true)}
+          title="Ready to Generate a Quiz"
+          description="Select a textbook from the panel above and click 'Generate Quiz from Textbook' to begin."
+          actionText="Generate Quiz"
+          onAction={() => handleGenerateQuizFromTextbook()}
         />
       )}
     </div>

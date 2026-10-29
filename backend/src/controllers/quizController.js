@@ -50,6 +50,15 @@ export class QuizController {
         });
       }
 
+      // Enforce textbook authorization: students cannot generate quizzes from another user's private textbook
+      const ownerId = book.user_id ? String(book.user_id).trim() : "";
+      if (ownerId && ownerId !== DEFAULT_USER_ID && currentUserId !== ownerId) {
+        return res.status(403).json({
+          success: false,
+          error: "Access denied: You do not have permission to generate a quiz from this private textbook."
+        });
+      }
+
       const title = `${book.title} AI Mastery Quiz`;
       const subject = book.subject || "Academic Assessment";
 
@@ -82,6 +91,9 @@ export class QuizController {
         quizId: quiz.id,
         quiz: {
           ...quiz,
+          bookId: targetBookId,
+          book_id: targetBookId,
+          textbookId: targetBookId,
           title,
           subject,
           topic: subject,
