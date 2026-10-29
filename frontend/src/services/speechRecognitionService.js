@@ -11,13 +11,29 @@ export const SPEECH_LOCALE_MAP = {
   te: "te-IN",
   kn: "kn-IN",
   ml: "ml-IN",
-  bn: "bn-IN"
+  bn: "bn-IN",
+  "en-in": "en-IN",
+  "en-us": "en-US",
+  "ta-in": "ta-IN",
+  "hi-in": "hi-IN",
+  "te-in": "te-IN",
+  "kn-in": "kn-IN",
+  "ml-in": "ml-IN",
+  "bn-in": "bn-IN"
 };
 
 export const getSpeechLocale = (langCode = "en") => {
   if (!langCode) return "en-IN";
-  const normalized = String(langCode).toLowerCase().trim();
-  return SPEECH_LOCALE_MAP[normalized] || "en-IN";
+  const raw = String(langCode).trim();
+  const normalized = raw.toLowerCase();
+  if (SPEECH_LOCALE_MAP[normalized]) {
+    return SPEECH_LOCALE_MAP[normalized];
+  }
+  const prefix = normalized.split(/[-_]/)[0];
+  if (SPEECH_LOCALE_MAP[prefix]) {
+    return SPEECH_LOCALE_MAP[prefix];
+  }
+  return "en-IN";
 };
 
 export const isSpeechRecognitionSupported = () => {
@@ -56,7 +72,9 @@ export class SpeechRecognitionService {
     this.recognition = null;
     this.isListening = false;
     this.isStarting = false;
+    this.isStopping = false;
     this.abortedIntentionally = false;
+    this.finalChunksMap = new Map();
     this.finalTranscript = "";
     this.interimTranscript = "";
   }
@@ -89,17 +107,31 @@ export class SpeechRecognitionService {
       return false;
     }
 
-    // Guard against rapid duplicate clicks while starting or already listening
-    if (this.isStarting || this.isListening) {
+    // Guard against rapid duplicate clicks while starting, listening, or stopping
+    if (this.isStarting || this.isListening || this.isStopping) {
       return false;
     }
 
     this.isStarting = true;
+    this.isStopping = false;
     this.abortedIntentionally = false;
+    this.finalChunksMap.clear();
     this.finalTranscript = "";
     this.interimTranscript = "";
 
     try {
+      // Clean up any stale listeners on previous recognition instance
+      if (this.recognition) {
+        try {
+          this.recognition.onstart = null;
+          this.recognition.onresult = null;
+          this.recognition.onerror = null;
+          this.recognition.onend = null;
+        } catch {
+          // Ignore
+        }
+      }
+
       const SpeechRecognitionConstructor =
         window.SpeechRecognition || window.webkitSpeechRecognition;
       this.recognition = new SpeechRecognitionConstructor();
@@ -112,34 +144,57 @@ export class SpeechRecognitionService {
       this.recognition.onstart = () => {
         this.isStarting = false;
         this.isListening = true;
+        this.isStopping = false;
         if (typeof onStart === "function") {
           onStart();
         }
       };
 
       this.recognition.onresult = (event) => {
-        let currentInterim = "";
-        let newFinal = "";
+        if (!event || !event.results) return;
 
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          const transcriptChunk = result[0]?.transcript || "";
-          if (result.isFinal) {
-            newFinal += (newFinal ? " " : "") + transcriptChunk.trim();
-          } else {
-            currentInterim += (currentInterim ? " " : "") + transcriptChunk;
+        const results = event.results;
+        let interimParts = [];
+
+        // Standard cumulative SpeechRecognitionResultList semantics:
+        // event.results contains all results from index 0 to results.length - 1.
+        // Prune any stale entries if results list shrank, rebuild interimParts across
+        // all current result indices, and maintain finalized entries strictly by index.
+        for (const key of this.finalChunksMap.keys()) {
+          if (key >= results.length) {
+            this.finalChunksMap.delete(key);
           }
         }
 
-        if (newFinal) {
-          this.finalTranscript = (
-            this.finalTranscript + (this.finalTranscript ? " " : "") + newFinal
-          ).trim();
+        for (let i = 0; i < results.length; i++) {
+          const res = results[i];
+          if (!res) continue;
+          const transcriptChunk = (res[0]?.transcript || "").trim();
+          if (!transcriptChunk) {
+            this.finalChunksMap.delete(i);
+            continue;
+          }
+
+          if (res.isFinal) {
+            this.finalChunksMap.set(i, transcriptChunk);
+          } else {
+            this.finalChunksMap.delete(i);
+            interimParts.push(transcriptChunk);
+          }
         }
-        this.interimTranscript = currentInterim.trim();
+
+        // Deterministically join finalized chunks in numerical sequence order
+        const sortedIndices = Array.from(this.finalChunksMap.keys()).sort((a, b) => a - b);
+        this.finalTranscript = sortedIndices
+          .map((i) => this.finalChunksMap.get(i))
+          .filter(Boolean)
+          .join(" ");
+
+        this.interimTranscript = interimParts.join(" ");
 
         const combinedText = (
-          this.finalTranscript + (this.interimTranscript ? " " + this.interimTranscript : "")
+          this.finalTranscript +
+          (this.interimTranscript ? (this.finalTranscript ? " " : "") + this.interimTranscript : "")
         ).trim();
 
         if (typeof onTranscript === "function") {
@@ -147,7 +202,7 @@ export class SpeechRecognitionService {
             finalTranscript: this.finalTranscript,
             interimTranscript: this.interimTranscript,
             combinedText,
-            isFinal: Boolean(newFinal)
+            isFinal: Boolean(this.finalTranscript && !this.interimTranscript)
           });
         }
       };
@@ -160,6 +215,7 @@ export class SpeechRecognitionService {
 
         this.isStarting = false;
         this.isListening = false;
+        this.isStopping = false;
 
         const friendlyMsg = getFriendlySpeechErrorMessage(errorCode, true);
         if (typeof onError === "function") {
@@ -168,12 +224,29 @@ export class SpeechRecognitionService {
       };
 
       this.recognition.onend = () => {
+        const wasAborted = this.abortedIntentionally;
         this.isStarting = false;
         this.isListening = false;
+        this.isStopping = false;
+
+        // Discard unfinalized interim speech on intentional abort
+        if (wasAborted) {
+          this.interimTranscript = "";
+        }
+
+        const combinedText = wasAborted
+          ? this.finalTranscript.trim()
+          : (
+              this.finalTranscript +
+              (this.interimTranscript ? (this.finalTranscript ? " " : "") + this.interimTranscript : "")
+            ).trim();
+
         if (typeof onEnd === "function") {
           onEnd({
             finalTranscript: this.finalTranscript,
-            aborted: this.abortedIntentionally
+            interimTranscript: this.interimTranscript,
+            combinedText,
+            aborted: wasAborted
           });
         }
       };
@@ -183,6 +256,7 @@ export class SpeechRecognitionService {
     } catch (err) {
       this.isStarting = false;
       this.isListening = false;
+      this.isStopping = false;
       const friendlyMsg = getFriendlySpeechErrorMessage(err.message || "start-failed", true);
       if (typeof onError === "function") {
         onError(friendlyMsg, "start-failed");
@@ -192,22 +266,28 @@ export class SpeechRecognitionService {
   }
 
   stop() {
-    if (!this.recognition || (!this.isListening && !this.isStarting)) {
+    if (!this.recognition || (!this.isListening && !this.isStarting) || this.isStopping) {
       return;
     }
+    this.isStopping = true;
     try {
       this.recognition.stop();
     } catch {
-      // Ignore if already stopped
-    } finally {
-      this.isStarting = false;
+      this.isStopping = false;
       this.isListening = false;
+      this.isStarting = false;
     }
   }
 
   abort() {
     this.abortedIntentionally = true;
-    if (!this.recognition) return;
+    this.interimTranscript = "";
+    if (!this.recognition) {
+      this.isStarting = false;
+      this.isListening = false;
+      this.isStopping = false;
+      return;
+    }
     try {
       this.recognition.abort();
     } catch {
@@ -215,6 +295,7 @@ export class SpeechRecognitionService {
     } finally {
       this.isStarting = false;
       this.isListening = false;
+      this.isStopping = false;
     }
   }
 }

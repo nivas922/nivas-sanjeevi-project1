@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  speechRecognitionService,
+  SpeechRecognitionService,
   isSpeechRecognitionSupported,
   getSpeechLocale
 } from "../services/speechRecognitionService";
@@ -14,15 +14,26 @@ export const useSpeechRecognition = () => {
   const [error, setError] = useState(null);
   const [errorCode, setErrorCode] = useState(null);
 
-  const serviceRef = useRef(speechRecognitionService);
+  // Each hook instance manages its own dedicated SpeechRecognitionService
+  const serviceRef = useRef(null);
+  if (!serviceRef.current) {
+    serviceRef.current = new SpeechRecognitionService();
+  }
+
+  const isListeningRef = useRef(false);
   const onCompleteRef = useRef(null);
   const onTranscriptChangeRef = useRef(null);
 
-  // Stop listening and cleanup on unmount
+  // Synchronize isListeningRef with isListening state
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
+
+  // Unmount-only cleanup: abort only when component unmounts and this instance was actively listening
   useEffect(() => {
     const service = serviceRef.current;
     return () => {
-      if (service) {
+      if (isListeningRef.current && service) {
         service.abort();
       }
     };
@@ -71,13 +82,24 @@ export const useSpeechRecognition = () => {
           setError(friendlyMessage);
           setErrorCode(code);
         },
-        onEnd: ({ finalTranscript: finalTxt }) => {
+        onEnd: ({ finalTranscript: finalTxt, interimTranscript: interimTxt, combinedText, aborted }) => {
           setIsListening(false);
           setInterimTranscript("");
 
+          // On intentional abort, do not output interim speech or invoke completion
+          if (aborted) {
+            return;
+          }
+
+          const capturedSpeech = combinedText || finalTxt || interimTxt || "";
           const resultText = initialText
-            ? `${initialText} ${finalTxt}`.trim()
-            : finalTxt;
+            ? (capturedSpeech ? `${initialText} ${capturedSpeech}`.trim() : initialText)
+            : capturedSpeech;
+
+          if (capturedSpeech) {
+            setFinalTranscript(capturedSpeech);
+            setTranscript(resultText);
+          }
 
           if (typeof onCompleteRef.current === "function") {
             onCompleteRef.current(resultText);
