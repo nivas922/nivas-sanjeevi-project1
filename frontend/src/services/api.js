@@ -815,5 +815,21 @@ export const api = {
       console.warn("getTextbooks API notice:", err.message);
     }
     return storageService.getTextbooks();
+  },
+
+  async getBookById(id) {
+    if (!id) return null;
+    try {
+      const res = await fetch(`${API_BASE_URL}/books/${id}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.book || null;
+      }
+    } catch (err) {
+      console.warn("getBookById API notice:", err.message);
+    }
+    return storageService.getTextbookById(id);
   }
 };

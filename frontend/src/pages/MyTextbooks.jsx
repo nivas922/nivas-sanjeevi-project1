@@ -9,7 +9,8 @@ import {
   Layers,
   ArrowRight,
   BookMarked,
-  Trash2
+  Trash2,
+  FileText
 } from "lucide-react";
 import { useLearning } from "../context/LearningContext";
 import { Button } from "../components/common/Button";
@@ -18,10 +19,11 @@ import { Badge } from "../components/common/Badge";
 import { EmptyState } from "../components/common/EmptyState";
 import { storageService } from "../services/storageService";
 import { useToast } from "../context/ToastContext";
+import { api, resolveBackendUrl } from "../services/api";
 
 export const MyTextbooks = () => {
-  const { textbooks, refreshLearningData } = useLearning();
-  const { showSuccess } = useToast();
+  const { textbooks, summaries, refreshLearningData } = useLearning();
+  const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -35,6 +37,89 @@ export const MyTextbooks = () => {
       filterStatus === "All" || book.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
+
+  const findMatchingSummary = (book) => {
+    if (!book || !summaries) return null;
+    return (
+      summaries.find(
+        (s) =>
+          (s.bookId && s.bookId === book.id) ||
+          (s.book_id && s.book_id === book.id) ||
+          (s.textbookId && s.textbookId === book.id) ||
+          (s.bookTitle && book.title && s.bookTitle.toLowerCase() === book.title.toLowerCase())
+      ) || null
+    );
+  };
+
+  const handleContinueLearning = (e, book) => {
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
+    const matchingSummary = findMatchingSummary(book);
+    if (matchingSummary && matchingSummary.id) {
+      navigate(`/summaries/${matchingSummary.id}`);
+    } else {
+      navigate("/summaries");
+    }
+  };
+
+  const handleOpenPdf = async (e, book) => {
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
+
+    if (!book) {
+      showError("Textbook details not found.");
+      return;
+    }
+
+    // 1. Locate genuine PDF file URL or fileName from book record
+    let rawUrl = book.fileUrl || book.file_url || book.pdfUrl || book.pdf_url;
+    if (!rawUrl && book.fileName) {
+      rawUrl = `/uploads/${book.fileName}`;
+    }
+
+    // 2. If not stored locally on client, check backend server record
+    if (!rawUrl && book.id) {
+      try {
+        const serverBook = await api.getBookById(book.id);
+        if (serverBook) {
+          rawUrl = serverBook.fileUrl || serverBook.file_url || serverBook.pdfUrl || serverBook.pdf_url;
+          if (!rawUrl && serverBook.fileName) {
+            rawUrl = `/uploads/${serverBook.fileName}`;
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to retrieve book metadata from server:", err);
+      }
+    }
+
+    // 3. Gracefully notify if original PDF is genuinely not available
+    if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
+      showError(`Original PDF is not available for "${book.title}".`);
+      return;
+    }
+
+    // 4. Resolve fully qualified URL safely
+    const targetUrl = resolveBackendUrl(rawUrl);
+    if (!targetUrl) {
+      showError(`Unable to resolve PDF link for "${book.title}".`);
+      return;
+    }
+
+    // 5. Open genuine original PDF in a new browser tab/viewer
+    try {
+      const link = document.createElement("a");
+      link.href = targetUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (openErr) {
+      window.open(targetUrl, "_blank", "noopener,noreferrer");
+    }
+  };
 
   const handleDelete = (e, bookId, bookTitle) => {
     e.stopPropagation();
@@ -106,8 +191,9 @@ export const MyTextbooks = () => {
           {filteredTextbooks.map((book) => (
             <div
               key={book.id}
-              onClick={() => navigate("/summaries/sum-1")}
+              onClick={(e) => handleOpenPdf(e, book)}
               className="group bg-white rounded-3xl border border-slate-200/80 overflow-hidden shadow-soft-sm hover:shadow-soft-lg hover:border-brand-300 transition-all duration-200 flex flex-col justify-between cursor-pointer"
+              title={`Click to open original PDF for ${book.title}`}
             >
               <div>
                 {/* Book Cover Image */}
@@ -191,14 +277,26 @@ export const MyTextbooks = () => {
                 </div>
               </div>
 
-              {/* Card Footer Button */}
-              <div className="p-5 pt-0">
+              {/* Card Footer Actions */}
+              <div className="p-5 pt-0 flex items-center gap-2.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={FileText}
+                  onClick={(e) => handleOpenPdf(e, book)}
+                  className="flex-1 font-semibold text-slate-700 hover:text-brand-700 hover:border-brand-300 transition-colors"
+                  title="Open original textbook PDF"
+                >
+                  Open PDF
+                </Button>
                 <Button
                   variant="secondary"
                   size="sm"
                   icon={ArrowRight}
                   iconPosition="right"
-                  className="w-full group-hover:bg-brand-600 group-hover:text-white transition-colors"
+                  onClick={(e) => handleContinueLearning(e, book)}
+                  className="flex-1 font-semibold group-hover:bg-brand-600 group-hover:text-white transition-colors"
+                  title="Continue textbook summary and quizzes"
                 >
                   Continue Learning
                 </Button>

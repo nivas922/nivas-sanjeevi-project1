@@ -474,12 +474,12 @@ export const SummaryDetail = () => {
 
           <Button
             size="lg"
-            variant="purple"
+            variant="secondary"
             icon={HelpCircle}
             iconPosition="right"
             loading={generatingQuiz}
             onClick={handleStartCustomQuiz}
-            className="bg-white text-brand-900 hover:bg-slate-100 font-bold px-6 shadow-soft-md"
+            className="bg-white hover:bg-slate-100 !text-slate-900 font-bold px-6 shadow-soft-md focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-purple-900"
           >
             Start {getFinalQuestionCount()}-Q Quiz
           </Button>
