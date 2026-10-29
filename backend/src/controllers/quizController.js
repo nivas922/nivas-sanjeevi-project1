@@ -98,7 +98,18 @@ export class QuizController {
   // POST /submit-quiz
   static async submitQuiz(req, res, next) {
     try {
-      const { quiz_id, quizId, answers, selectedAnswers } = req.body;
+      const {
+        quiz_id,
+        quizId,
+        answers,
+        selectedAnswers,
+        topic: reqTopic,
+        subject: reqSubject,
+        quizTitle: reqTitle,
+        timeSpentSeconds: reqTimeSpent,
+        summaryId: reqSummaryId,
+        bookId: reqBookId
+      } = req.body;
       const targetQuizId = quiz_id || quizId;
       const userAnswers = answers ?? selectedAnswers;
 
@@ -183,10 +194,14 @@ export class QuizController {
       });
 
       // Get associated subject and topic
-      let subjectName = "General Studies";
+      let subjectName = reqSubject || "General Studies";
+      let bookTitle = "";
       if (quiz.book_id) {
         const book = await Book.findById(quiz.book_id);
-        if (book) subjectName = book.subject || book.title;
+        if (book) {
+          subjectName = book.subject || book.title || subjectName;
+          bookTitle = book.title || "";
+        }
       }
 
       const currentUserId = resolveAuthUserId(req) || DEFAULT_USER_ID;
@@ -202,8 +217,29 @@ export class QuizController {
         reference_id: quiz.id
       });
 
-      const primaryTopic = questions[0]?.topic || subjectName;
-      const targetRecommendationTopic = percentage < 65 ? primaryTopic : `${primaryTopic} Advanced Applications`;
+      // Identify primary topic and weak topics from answers
+      const missedQuestions = reviewedAnswers.filter(
+        (a) => !a.isCorrect && a.topic && a.topic !== "Core Concept" && a.topic.toLowerCase() !== "undefined"
+      );
+      const questionWithTopic = questions.find(
+        (q) => q.topic && q.topic !== "Core Concept" && q.topic.toLowerCase() !== "undefined"
+      );
+
+      const isValidTopic = (t) => t && typeof t === "string" && t.trim() && t.trim().toLowerCase() !== "undefined";
+
+      const identifiedTopic = isValidTopic(reqTopic)
+        ? reqTopic.trim()
+        : (percentage < 80 && missedQuestions.length > 0 && isValidTopic(missedQuestions[0].topic))
+        ? missedQuestions[0].topic.trim()
+        : isValidTopic(questionWithTopic?.topic)
+        ? questionWithTopic.topic.trim()
+        : isValidTopic(questions[0]?.topic)
+        ? questions[0].topic.trim()
+        : isValidTopic(subjectName)
+        ? subjectName.trim()
+        : "General Review";
+
+      const targetRecommendationTopic = percentage < 65 ? identifiedTopic : `${identifiedTopic} Advanced Applications`;
 
       return res.status(200).json({
         success: true,
@@ -217,7 +253,13 @@ export class QuizController {
         reviewedAnswers,
         answers: reviewedAnswers,
         recommendedTopic: targetRecommendationTopic,
-        recommendationDifficulty: percentage < 50 ? "Beginner" : percentage < 75 ? "Intermediate" : "Advanced"
+        recommendationDifficulty: percentage < 50 ? "Beginner" : percentage < 75 ? "Intermediate" : "Advanced",
+        topic: identifiedTopic,
+        subject: subjectName,
+        quizTitle: reqTitle || (bookTitle ? `${bookTitle} Quiz` : `${identifiedTopic} Quiz`),
+        timeSpentSeconds: reqTimeSpent || 120,
+        bookId: quiz.book_id || reqBookId || null,
+        summaryId: reqSummaryId || null
       });
     } catch (error) {
       next(error);

@@ -416,6 +416,20 @@ export const initDb = async () => {
     );
   `);
 
+  // 7. Study Sessions table (tracks actual active student study sessions)
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS study_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      activity_type TEXT NOT NULL,
+      duration_seconds INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_study_sessions_user_date ON study_sessions(user_id, date);`);
+
   // OTP Verification Cache Table (supports mobile OTP, email verification, password reset)
   try {
     const otpCols = await dbAll("PRAGMA table_info(otp_verifications);");

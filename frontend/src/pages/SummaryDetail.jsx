@@ -27,6 +27,7 @@ import { TranslationModal } from "../components/summary/TranslationModal";
 import { exportService } from "../services/exportService";
 import { useToast } from "../context/ToastContext";
 import { api } from "../services/api";
+import { studyTracker } from "../services/studyTracker";
 import { SUPPORTED_LANGUAGES } from "../data/translations";
 
 export const SummaryDetail = () => {
@@ -81,6 +82,16 @@ export const SummaryDetail = () => {
       isMounted = false;
     };
   }, [id, summaries]);
+
+  // Track active study time when reading summary
+  useEffect(() => {
+    if (summary && !loadingSummary) {
+      studyTracker.startSession("summary");
+    }
+    return () => {
+      studyTracker.stopSession();
+    };
+  }, [summary, loadingSummary]);
 
   if (loadingSummary) {
     return (

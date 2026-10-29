@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { api } from "../services/api";
 import { storageService } from "../services/storageService";
+import { studyTracker } from "../services/studyTracker";
 import { Button } from "../components/common/Button";
 import { Badge } from "../components/common/Badge";
 
@@ -122,6 +123,16 @@ export const ReadTextbook = () => {
       isCancelled = true;
     };
   }, [id]);
+
+  // Track active study time when reading textbook
+  useEffect(() => {
+    if (pdfDoc && !loading) {
+      studyTracker.startSession("textbook");
+    }
+    return () => {
+      studyTracker.stopSession();
+    };
+  }, [pdfDoc, loading]);
 
   // 2. Render Page to Canvas
   const renderPage = useCallback(

@@ -3,6 +3,7 @@ import { ActivityLog } from "../models/ActivityLog.js";
 import { User } from "../models/User.js";
 import { Book } from "../models/Book.js";
 import { Quiz } from "../models/Quiz.js";
+import { StudySession } from "../models/StudySession.js";
 import { AdaptiveLearningService } from "../services/adaptiveLearningService.js";
 import { DEFAULT_USER_ID, resolveAuthUserId } from "../middleware/auth.js";
 
@@ -207,6 +208,58 @@ export class ProgressController {
         user_id: targetUserId,
         book_id: bookId,
         ...dashboard
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /study-sessions
+  static async recordStudySession(req, res, next) {
+    try {
+      const authUserId = resolveAuthUserId(req) || DEFAULT_USER_ID;
+      const { activity_type, activityType, duration_seconds, durationSeconds, date } = req.body;
+      const finalType = activity_type || activityType || "summary";
+      const finalSecs = parseInt(duration_seconds ?? durationSeconds, 10);
+      const finalDate = date || new Date().toISOString().split("T")[0];
+
+      if (isNaN(finalSecs) || finalSecs <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: "duration_seconds must be a positive integer"
+        });
+      }
+
+      const session = await StudySession.create({
+        user_id: authUserId,
+        activity_type: finalType,
+        duration_seconds: finalSecs,
+        date: finalDate
+      });
+
+      return res.status(201).json({
+        success: true,
+        status: "success",
+        session
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /study-sessions
+  static async getStudySessions(req, res, next) {
+    try {
+      const authUserId = resolveAuthUserId(req) || DEFAULT_USER_ID;
+      const localDate = req.query.date || new Date().toISOString().split("T")[0];
+      const stats = await StudySession.getStats(authUserId, localDate);
+
+      return res.status(200).json({
+        success: true,
+        status: "success",
+        user_id: authUserId,
+        date: localDate,
+        ...stats
       });
     } catch (error) {
       next(error);

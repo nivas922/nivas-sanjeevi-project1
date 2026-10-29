@@ -9,7 +9,8 @@ const STORAGE_KEYS = {
   RECOMMENDATIONS: "learnai_recommendations_v3",
   SUBJECT_PROGRESS: "learnai_subject_progress_v3",
   ACTIVITIES: "learnai_activities_v3",
-  TOKEN: "learnai_auth_token_v3"
+  TOKEN: "learnai_auth_token_v3",
+  STUDY_SESSIONS: "learnai_study_sessions_v3"
 };
 
 export const createZeroStateUser = (name = "Student", email = "student@university.edu", department = "Computer Science & Engineering (CSE)", avatar = null) => {
@@ -28,7 +29,8 @@ export const createZeroStateUser = (name = "Student", email = "student@universit
     preferredDifficulty: "Intermediate",
     speechRate: 1.0,
     speechVoice: "default",
-    notifications: true
+    notifications: true,
+    dailyStudyTargetMinutes: 30
   };
 };
 
@@ -256,6 +258,84 @@ export const storageService = {
     const list = this.getActivities();
     const updated = [activity, ...list].slice(0, 10);
     localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(updated));
+  },
+
+  getStudySessions(userId = null) {
+    const raw = localStorage.getItem(STORAGE_KEYS.STUDY_SESSIONS);
+    const all = raw ? JSON.parse(raw) : [];
+    const currentId = userId || this.getUser()?.id || "usr_default";
+    return all.filter((s) => !s.user_id || s.user_id === currentId);
+  },
+
+  addStudySession(session) {
+    const raw = localStorage.getItem(STORAGE_KEYS.STUDY_SESSIONS);
+    const all = raw ? JSON.parse(raw) : [];
+    const updated = [session, ...all];
+    localStorage.setItem(STORAGE_KEYS.STUDY_SESSIONS, JSON.stringify(updated));
+    return session;
+  },
+
+  recordStudyTime(durationSeconds, activityType, localDate, userId = null) {
+    if (!durationSeconds || durationSeconds <= 0) return null;
+    const currentId = userId || this.getUser()?.id || "usr_default";
+    const dateStr = localDate || new Date().toISOString().split("T")[0];
+
+    const session = {
+      id: "session-" + Date.now() + "-" + Math.random().toString(36).substring(7),
+      user_id: currentId,
+      activity_type: activityType || "summary",
+      duration_seconds: durationSeconds,
+      date: dateStr,
+      timestamp: new Date().toISOString()
+    };
+
+    this.addStudySession(session);
+    return session;
+  },
+
+  getStudyStats(userId = null, localDate = null) {
+    const currentId = userId || this.getUser()?.id || "usr_default";
+    const dateStr = localDate || new Date().toISOString().split("T")[0];
+    const sessions = this.getStudySessions(currentId);
+
+    // 1. Calculate today's minutes
+    const todaySessions = sessions.filter((s) => s.date === dateStr);
+    const todaySeconds = todaySessions.reduce(
+      (acc, s) => acc + (s.duration_seconds || s.durationSeconds || 0),
+      0
+    );
+    const todayMinutes = Math.round(todaySeconds / 60);
+
+    // 2. Build last 7 calendar days
+    const weeklyData = [];
+    const baseDate = new Date(`${dateStr}T12:00:00Z`);
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(baseDate);
+      d.setDate(baseDate.getDate() - i);
+      const dayDateStr = d.toISOString().split("T")[0];
+      const isToday = (i === 0);
+      const dayLabel = isToday ? "Today" : d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+      const formattedDate = d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+      const daySecs = sessions
+        .filter((s) => s.date === dayDateStr)
+        .reduce((acc, s) => acc + (s.duration_seconds || s.durationSeconds || 0), 0);
+
+      weeklyData.push({
+        date: dayDateStr,
+        dayLabel,
+        formattedDate,
+        minutes: Math.round(daySecs / 60),
+        isToday
+      });
+    }
+
+    return {
+      todaySeconds,
+      todayMinutes,
+      weeklyData
+    };
   },
 
   getToken() {

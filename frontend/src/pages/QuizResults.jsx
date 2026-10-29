@@ -18,6 +18,7 @@ import { Button } from "../components/common/Button";
 import { Badge } from "../components/common/Badge";
 import { exportService } from "../services/exportService";
 import { useToast } from "../context/ToastContext";
+import { storageService } from "../services/storageService";
 
 export const QuizResults = () => {
   const location = useLocation();
@@ -47,14 +48,124 @@ export const QuizResults = () => {
     );
   }
 
+  // Robust topic resolution across metadata, question breakdown, and persistent storage
+  const resolveTopic = () => {
+    if (!result) return "General Review";
+
+    const isNonEmpty = (str) =>
+      typeof str === "string" && str.trim().length > 0 && str.trim().toLowerCase() !== "undefined";
+
+    // 1. Direct topic fields on result
+    if (isNonEmpty(result.topic)) return result.topic.trim();
+    if (isNonEmpty(result.quizTopic)) return result.quizTopic.trim();
+    if (isNonEmpty(result.recommendedTopic)) return result.recommendedTopic.trim();
+
+    // 2. Stored quiz metadata in client storage
+    const storedQuiz = result.quizId ? storageService.getQuizById(result.quizId) : null;
+    if (storedQuiz && isNonEmpty(storedQuiz.topic)) return storedQuiz.topic.trim();
+
+    // 3. Inspect individual question topics (prioritize missed questions for weak topic diagnosis)
+    const answersList = Array.isArray(result.reviewedAnswers)
+      ? result.reviewedAnswers
+      : Array.isArray(result.answers)
+      ? result.answers
+      : [];
+
+    if (answersList.length > 0) {
+      const missedWithTopic = answersList.find(
+        (a) => !a.isCorrect && isNonEmpty(a.topic) && a.topic.trim() !== "Core Concept"
+      );
+      if (missedWithTopic) return missedWithTopic.topic.trim();
+
+      const specificTopic = answersList.find(
+        (a) => isNonEmpty(a.topic) && a.topic.trim() !== "Core Concept"
+      );
+      if (specificTopic) return specificTopic.topic.trim();
+
+      const anyTopic = answersList.find((a) => isNonEmpty(a.topic));
+      if (anyTopic) return anyTopic.topic.trim();
+    }
+
+    // 4. Stored questions on quiz record
+    if (storedQuiz?.questions && Array.isArray(storedQuiz.questions) && storedQuiz.questions.length > 0) {
+      const qTopic = storedQuiz.questions.find((q) => isNonEmpty(q.topic));
+      if (qTopic) return qTopic.topic.trim();
+    }
+
+    // 5. Subject or book/quiz title
+    if (isNonEmpty(result.subject)) return result.subject.trim();
+    if (storedQuiz && isNonEmpty(storedQuiz.subject)) return storedQuiz.subject.trim();
+    if (isNonEmpty(result.quizTitle)) return result.quizTitle.replace(/\s+Quiz$/i, "").trim();
+
+    // 6. Sensible fallback
+    return "General Review";
+  };
+
+  const resolvedTopic = resolveTopic();
+
+  // Navigation handler to study the diagnosed topic
+  const handleStudyTopic = () => {
+    const storedQuiz = result?.quizId ? storageService.getQuizById(result.quizId) : null;
+    const directSummaryId = result?.summaryId || result?.summary_id || storedQuiz?.summaryId || storedQuiz?.summary_id;
+
+    if (directSummaryId) {
+      const exists = storageService.getSummaryById(directSummaryId);
+      if (exists) {
+        navigate(`/summaries/${directSummaryId}`);
+        return;
+      }
+    }
+
+    const allSummaries = storageService.getSummaries();
+    if (allSummaries && allSummaries.length > 0) {
+      const topicLower = resolvedTopic.toLowerCase();
+      const bookId = result?.bookId || result?.book_id || storedQuiz?.bookId || storedQuiz?.book_id;
+      const subjLower = (result?.subject || storedQuiz?.subject || "").toLowerCase();
+
+      // Find matching summary by ID, book ID, topic or subject match
+      const matched = allSummaries.find((s) => {
+        const sTopic = (s.topic || "").toLowerCase();
+        const sBook = (s.bookTitle || "").toLowerCase();
+        const sChap = (s.chapterTitle || "").toLowerCase();
+        const sBookId = s.bookId || s.book_id || s.textbookId;
+
+        return (
+          (directSummaryId && s.id === directSummaryId) ||
+          (bookId && sBookId === bookId) ||
+          (sTopic && (sTopic.includes(topicLower) || topicLower.includes(sTopic))) ||
+          (subjLower && sBook.includes(subjLower)) ||
+          (sChap && (sChap.includes(topicLower) || topicLower.includes(sChap)))
+        );
+      });
+
+      if (matched) {
+        navigate(`/summaries/${matched.id}`);
+        return;
+      }
+
+      // Default to opening the latest summary
+      navigate(`/summaries/${allSummaries[0].id}`);
+      return;
+    }
+
+    navigate("/summaries");
+  };
+
   const formatTime = (secs) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
+    const sVal = typeof secs === "number" && !isNaN(secs) && secs >= 0 ? secs : 120;
+    const m = Math.floor(sVal / 60);
+    const s = sVal % 60;
     return `${m}m ${s}s`;
   };
 
   const handleDownload = () => {
-    exportService.exportQuizResult(result);
+    exportService.exportQuizResult({
+      ...result,
+      topic: resolvedTopic,
+      subject: result.subject || "General Studies",
+      quizTitle: result.quizTitle || `${resolvedTopic} Quiz`,
+      timeSpentSeconds: result.timeSpentSeconds || 120
+    });
     showSuccess("Quiz result report downloaded!");
   };
 
@@ -72,11 +183,11 @@ export const QuizResults = () => {
                 Quiz Evaluation
               </span>
               <span className="text-xs text-slate-400 font-medium">
-                {result.subject}
+                {result.subject || "Adaptive Assessment"}
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900">
-              {result.quizTitle}
+              {result.quizTitle || `${resolvedTopic} Quiz`}
             </h1>
           </div>
 
@@ -116,8 +227,8 @@ export const QuizResults = () => {
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
               Performance
             </span>
-            <Badge variant={result.performanceLevel.toLowerCase()} size="md" className="mt-1">
-              {result.performanceLevel}
+            <Badge variant={result.performanceLevel ? result.performanceLevel.toLowerCase() : "intermediate"} size="md" className="mt-1">
+              {result.performanceLevel || "Evaluated"}
             </Badge>
           </div>
 
@@ -155,10 +266,10 @@ export const QuizResults = () => {
             </div>
             <h3 className="text-lg font-bold">
               {isWeak
-                ? `Topic "${result.topic}" marked as Weak Topic`
+                ? `Topic "${resolvedTopic}" marked as Weak Topic`
                 : isStrong
-                ? `Topic "${result.topic}" Mastered!`
-                : `Good Progress in "${result.topic}"`}
+                ? `Topic "${resolvedTopic}" Mastered!`
+                : `Good Progress in "${resolvedTopic}"`}
             </h3>
             <p className="text-xs sm:text-sm mt-1 leading-relaxed opacity-90">
               {isWeak
@@ -176,7 +287,7 @@ export const QuizResults = () => {
             size="md"
             icon={BookOpen}
             iconPosition="right"
-            onClick={() => navigate("/summaries/sum-1")}
+            onClick={handleStudyTopic}
           >
             Study This Topic
           </Button>

@@ -20,6 +20,7 @@ import { QuizProgress } from "../components/quiz/QuizProgress";
 import { Button } from "../components/common/Button";
 import { useToast } from "../context/ToastContext";
 import { api } from "../services/api";
+import { studyTracker } from "../services/studyTracker";
 import { EmptyState } from "../components/common/EmptyState";
 import { DEPARTMENTS } from "../data/translations";
 
@@ -109,6 +110,16 @@ export const AIQuiz = () => {
     return () => clearInterval(interval);
   }, [timeLeft, quiz]);
 
+  // Track active study time when taking quiz
+  useEffect(() => {
+    if (quiz && !loading) {
+      studyTracker.startSession("quiz");
+    }
+    return () => {
+      studyTracker.stopSession();
+    };
+  }, [quiz, loading]);
+
   const getEffectiveCustomCount = () => {
     if (customQuestionInput === "custom") {
       const parsed = parseInt(customNumberValue, 10);
@@ -167,11 +178,17 @@ export const AIQuiz = () => {
 
     setIsSubmitting(true);
     try {
+      studyTracker.stopSession();
       const timeSpent = quiz.timeLimitMinutes * 60 - timeLeft;
       const result = await api.submitQuiz({
         quizId: quiz.id,
         selectedAnswers,
-        timeSpentSeconds: timeSpent > 0 ? timeSpent : 120
+        timeSpentSeconds: timeSpent > 0 ? timeSpent : 120,
+        topic: quiz.topic,
+        subject: quiz.subject,
+        quizTitle: quiz.title,
+        summaryId: quiz.summaryId || quiz.summary_id,
+        bookId: quiz.bookId || quiz.book_id || quiz.textbookId
       });
 
       refreshLearningData();

@@ -19,6 +19,10 @@ router.get("/adaptive-learning/analytics/:user_id", ProgressController.getLearni
 router.get("/adaptive-learning", ProgressController.getAdaptiveLearning);
 router.get("/adaptive-learning/:bookId", ProgressController.getAdaptiveLearning);
 
+// Study Sessions Tracking (Phase 3.3 Study Goals & Progress)
+router.post("/study-sessions", ProgressController.recordStudySession);
+router.get("/study-sessions", ProgressController.getStudySessions);
+
 export default router;
 
 

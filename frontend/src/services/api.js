@@ -665,22 +665,50 @@ export const api = {
         headers: getAuthHeaders(),
         body: JSON.stringify({
           quiz_id: submission.quizId,
-          answers: submission.selectedAnswers
+          answers: submission.selectedAnswers,
+          topic: submission.topic,
+          subject: submission.subject,
+          quizTitle: submission.quizTitle,
+          timeSpentSeconds: submission.timeSpentSeconds,
+          summaryId: submission.summaryId,
+          bookId: submission.bookId
         })
       });
       const data = await handleApiResponse(res);
+
+      const resolvedTopic = (data.topic && data.topic.toLowerCase() !== "undefined")
+        ? data.topic
+        : (submission.topic && submission.topic.toLowerCase() !== "undefined")
+        ? submission.topic
+        : "General Review";
+
+      const fullResult = {
+        ...data,
+        topic: resolvedTopic,
+        subject: data.subject || submission.subject || "General Studies",
+        quizTitle: data.quizTitle || submission.quizTitle || `${resolvedTopic} Quiz`,
+        timeSpentSeconds: data.timeSpentSeconds || submission.timeSpentSeconds || 120,
+        summaryId: data.summaryId || submission.summaryId || null,
+        bookId: data.bookId || submission.bookId || null
+      };
+
       storageService.saveQuizAttempt({
         id: "attempt-" + Date.now(),
         quizId: submission.quizId,
-        score: data.score,
-        totalQuestions: data.totalQuestions,
-        percentage: data.percentage,
-        performanceLevel: data.performanceLevel,
-        answers: data.reviewedAnswers || data.answers,
-        recommendedTopic: data.recommendedTopic,
-        recommendationDifficulty: data.recommendationDifficulty
+        score: fullResult.score,
+        totalQuestions: fullResult.totalQuestions,
+        percentage: fullResult.percentage,
+        performanceLevel: fullResult.performanceLevel,
+        answers: fullResult.reviewedAnswers || fullResult.answers,
+        recommendedTopic: fullResult.recommendedTopic,
+        recommendationDifficulty: fullResult.recommendationDifficulty,
+        topic: fullResult.topic,
+        subject: fullResult.subject,
+        timeSpentSeconds: fullResult.timeSpentSeconds,
+        summaryId: fullResult.summaryId,
+        bookId: fullResult.bookId
       });
-      return data;
+      return fullResult;
     } catch (err) {
       handleNetworkError(err);
     }
@@ -975,5 +1003,41 @@ export const api = {
     }
 
     throw new Error("Textbook PDF file could not be retrieved from server.");
+  },
+
+  async recordStudySession({ activityType, durationSeconds, date }) {
+    if (!durationSeconds || durationSeconds <= 0) return null;
+    try {
+      const res = await fetch(`${API_BASE_URL}/study-sessions`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          activity_type: activityType,
+          duration_seconds: durationSeconds,
+          date
+        })
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      // Offline fallback: already recorded in storageService
+    }
+    return null;
+  },
+
+  async getStudySessions(date = null) {
+    const localDate = date || new Date().toISOString().split("T")[0];
+    try {
+      const res = await fetch(`${API_BASE_URL}/study-sessions?date=${encodeURIComponent(localDate)}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err) {
+      // Offline fallback to local storage
+    }
+    return storageService.getStudyStats(null, localDate);
   }
 };
