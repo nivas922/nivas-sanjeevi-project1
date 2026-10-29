@@ -195,14 +195,19 @@ export class CloudinaryService {
    * Streams authenticated Cloudinary asset directly to an HTTP response.
    * Keeps Cloudinary internal URLs and signed tokens entirely server-side.
    */
-  static async streamAuthenticatedAsset(publicId, resourceType = "raw", res, book = null) {
+  static async streamAuthenticatedAsset(publicId, resourceType = "raw", res, book = null, req = null) {
     this.ensureConfigured();
     const signedUrl = this.generateSignedUrl(publicId, resourceType);
 
     return new Promise((resolve, reject) => {
       const client = signedUrl.startsWith("https") ? https : http;
+      const requestOptions = {};
+      if (req && req.headers && req.headers.range) {
+        requestOptions.headers = { Range: req.headers.range };
+      }
+
       client
-        .get(signedUrl, (streamRes) => {
+        .get(signedUrl, requestOptions, (streamRes) => {
           if (streamRes.statusCode >= 400) {
             const err = new Error(`Cloudinary delivery failed with status ${streamRes.statusCode}`);
             err.statusCode = streamRes.statusCode;
@@ -218,6 +223,15 @@ export class CloudinaryService {
                         resourceType === "raw";
 
           const mimeType = isPdf ? "application/pdf" : (streamRes.headers["content-type"] || "application/octet-stream");
+
+          if (streamRes.statusCode === 206) {
+            res.status(206);
+            if (streamRes.headers["content-range"]) {
+              res.setHeader("Content-Range", streamRes.headers["content-range"]);
+            }
+          }
+
+          res.setHeader("Accept-Ranges", "bytes");
           res.setHeader("Content-Type", mimeType);
           res.setHeader("Content-Disposition", `inline; filename="${path.basename(filename)}"`);
           if (streamRes.headers["content-length"]) {

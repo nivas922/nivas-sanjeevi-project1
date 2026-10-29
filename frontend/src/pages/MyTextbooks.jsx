@@ -63,69 +63,17 @@ export const MyTextbooks = () => {
     }
   };
 
-  const handleOpenPdf = async (e, book) => {
+  const handleOpenPdf = (e, book) => {
     if (e && e.stopPropagation) {
       e.stopPropagation();
     }
 
-    if (!book) {
+    if (!book || !book.id) {
       showError("Textbook details not found.");
       return;
     }
 
-    // 1. Immediately pre-open new tab synchronously to satisfy popup blockers
-    let preOpenedTab = null;
-    try {
-      preOpenedTab = window.open("", "_blank");
-      if (preOpenedTab) {
-        preOpenedTab.document.write(
-          "<!DOCTYPE html><html><head><title>Loading PDF...</title><meta name='viewport' content='width=device-width, initial-scale=1.0'></head><body style='margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;'><div style='text-align:center;'><div style='width:36px;height:36px;border:3px solid #334155;border-top-color:#38bdf8;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px;'></div><p style='font-size:15px;font-weight:500;margin:0;'>Opening textbook PDF...</p></div><style>@keyframes spin{to{transform:rotate(360deg)}}</style></body></html>"
-        );
-      }
-    } catch {}
-
-    try {
-      // 2. Fetch the PDF as a Blob so the browser's built-in PDF viewer renders it inline without downloading
-      const pdfBlob = await api.getBookPdfBlob(book);
-      const blobUrl = URL.createObjectURL(pdfBlob);
-
-      if (preOpenedTab && !preOpenedTab.closed) {
-        preOpenedTab.location.href = blobUrl;
-      } else {
-        window.open(blobUrl, "_blank", "noopener,noreferrer");
-      }
-
-      // Safe Blob URL lifecycle management:
-      // Allow browser tab's native PDF reader 60 seconds to parse and ingest the blob before revoking memory
-      setTimeout(() => {
-        try {
-          URL.revokeObjectURL(blobUrl);
-        } catch {}
-      }, 60000);
-    } catch (blobErr) {
-      // 3. Fallback: Direct navigation if blob fetch was not successful
-      let rawUrl = book.fileUrl || book.file_url || book.pdfUrl || book.pdf_url;
-      if (!rawUrl && book.fileName) {
-        rawUrl = `/uploads/${book.fileName}`;
-      }
-
-      if (rawUrl && typeof rawUrl === "string" && rawUrl.trim()) {
-        const targetUrl = resolveBackendUrl(rawUrl);
-        if (targetUrl) {
-          if (preOpenedTab && !preOpenedTab.closed) {
-            preOpenedTab.location.href = targetUrl;
-          } else {
-            window.open(targetUrl, "_blank", "noopener,noreferrer");
-          }
-          return;
-        }
-      }
-
-      if (preOpenedTab && !preOpenedTab.closed) {
-        preOpenedTab.close();
-      }
-      showError(`Original PDF is not available for "${book.title}".`);
-    }
+    navigate(`/textbooks/${book.id}/read`);
   };
 
   const handleDelete = async (e, bookId, bookTitle) => {

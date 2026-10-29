@@ -901,5 +901,46 @@ export const api = {
     }
 
     throw new Error("Unable to locate PDF file for textbook.");
+  },
+
+  async getBookPdfArrayBuffer(id, bookHint = null) {
+    if (!id) throw new Error("Textbook ID is required.");
+
+    // 1. Fetch through authenticated backend proxy /api/books/:id/file
+    const proxyUrl = resolveBackendUrl(`/api/books/${id}/file`);
+    const token = storageService.getToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    try {
+      const res = await fetch(proxyUrl, { headers });
+      if (res.ok) {
+        return await res.arrayBuffer();
+      }
+      if (res.status === 401) {
+        throw new Error("Authentication required. Please sign in to read this textbook.");
+      }
+      if (res.status === 403) {
+        throw new Error("Access denied. You do not have permission to read this textbook.");
+      }
+    } catch (err) {
+      if (err.message && (err.message.includes("Access denied") || err.message.includes("Authentication required"))) {
+        throw err;
+      }
+    }
+
+    // 2. Direct fallback if fileUrl is available on book record
+    const book = bookHint || storageService.getTextbookById(id);
+    const rawUrl = book?.fileUrl || book?.file_url || book?.pdfUrl || book?.pdf_url;
+    if (rawUrl && typeof rawUrl === "string" && rawUrl.trim()) {
+      const targetUrl = resolveBackendUrl(rawUrl);
+      if (targetUrl) {
+        const directRes = await fetch(targetUrl);
+        if (directRes.ok) {
+          return await directRes.arrayBuffer();
+        }
+      }
+    }
+
+    throw new Error("Textbook PDF file could not be retrieved from server.");
   }
 };

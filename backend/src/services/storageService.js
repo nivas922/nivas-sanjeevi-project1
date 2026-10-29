@@ -186,7 +186,37 @@ export class StorageService {
         else if (ext === ".png") mimeType = "image/png";
         else if (ext === ".webp") mimeType = "image/webp";
 
+        const stat = fs.statSync(localPath);
+        const fileSize = stat.size;
+        const range = req && req.headers ? req.headers.range : null;
+
+        if (range) {
+          const parts = range.replace(/bytes=/, "").split("-");
+          const start = parseInt(parts[0], 10);
+          const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+          if (isNaN(start) || isNaN(end) || start >= fileSize || end >= fileSize || start > end) {
+            res.status(416).setHeader("Content-Range", `bytes */${fileSize}`);
+            return res.end();
+          }
+          const chunksize = end - start + 1;
+          res.writeHead(206, {
+            "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+            "Accept-Ranges": "bytes",
+            "Content-Length": chunksize,
+            "Content-Type": mimeType,
+            "Content-Disposition": `inline; filename="${path.basename(book.fileName)}"`
+          });
+          const stream = fs.createReadStream(localPath, { start, end });
+          return new Promise((resolve, reject) => {
+            stream.pipe(res);
+            stream.on("end", resolve);
+            stream.on("error", reject);
+          });
+        }
+
         res.setHeader("Content-Type", mimeType);
+        res.setHeader("Content-Length", fileSize);
+        res.setHeader("Accept-Ranges", "bytes");
         res.setHeader("Content-Disposition", `inline; filename="${path.basename(book.fileName)}"`);
         const stream = fs.createReadStream(localPath);
         return new Promise((resolve, reject) => {
@@ -200,7 +230,7 @@ export class StorageService {
     // 2. Check authenticated Cloudinary storage if configured
     if (CloudinaryService.isConfigured() && book.fileName) {
       const resourceType = StorageService.resolveCloudinaryResourceType(book);
-      return await CloudinaryService.streamAuthenticatedAsset(book.fileName, resourceType, res, book);
+      return await CloudinaryService.streamAuthenticatedAsset(book.fileName, resourceType, res, book, req);
     }
 
     const notFoundErr = new Error("Textbook file not found in storage.");

@@ -8,6 +8,7 @@ import { AppLayout } from "./components/layout/AppLayout";
 import { Dashboard } from "./pages/Dashboard";
 import { UploadTextbook } from "./pages/UploadTextbook";
 import { MyTextbooks } from "./pages/MyTextbooks";
+import { ReadTextbook } from "./pages/ReadTextbook";
 import { MySummaries } from "./pages/MySummaries";
 import { SummaryDetail } from "./pages/SummaryDetail";
 import { TextToSpeechPage } from "./pages/TextToSpeechPage";
@@ -28,6 +29,7 @@ function App() {
               <Route path="/" element={<AppLayout />}>
                 <Route index element={<Dashboard />} />
                 <Route path="textbooks" element={<MyTextbooks />} />
+                <Route path="textbooks/:id/read" element={<ReadTextbook />} />
                 <Route path="upload" element={<UploadTextbook />} />
                 <Route path="summaries" element={<MySummaries />} />
                 <Route path="summaries/:id" element={<SummaryDetail />} />
