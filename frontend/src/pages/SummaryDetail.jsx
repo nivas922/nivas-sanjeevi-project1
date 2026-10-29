@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
-  Volume2,
   Globe,
   Sparkles,
   Download,
@@ -19,7 +18,6 @@ import {
 import { useLearning } from "../context/LearningContext";
 import { Button } from "../components/common/Button";
 import { Badge } from "../components/common/Badge";
-import { TextToSpeech } from "../components/tts/TextToSpeech";
 import { KeyPoints } from "../components/summary/KeyPoints";
 import { DefinitionsCard } from "../components/summary/DefinitionsCard";
 import { FormulasCard } from "../components/summary/FormulasCard";
@@ -103,9 +101,26 @@ export const SummaryDetail = () => {
     );
   }
 
+  const pageSummaries = (
+    Array.isArray(summary?.pageSummaries) && summary.pageSummaries.length > 0
+      ? summary.pageSummaries
+      : Array.isArray(summary?.page_summaries) && summary.page_summaries.length > 0
+      ? summary.page_summaries
+      : Array.isArray(summary?.quickRevision?.pageSummaries) && summary.quickRevision.pageSummaries.length > 0
+      ? summary.quickRevision.pageSummaries
+      : []
+  );
+
   const handleCopy = () => {
     const topicText = summary.topic || summary.bookTitle || "Summary";
-    const summaryBody = summary.summaryText || summary.summary_text || "";
+    let summaryBody = "";
+    if (pageSummaries.length > 0) {
+      summaryBody = pageSummaries
+        .map((p) => `Page ${p.pageNumber} Summary:\n${p.summary}`)
+        .join("\n\n");
+    } else {
+      summaryBody = summary.summaryText || summary.summary_text || "";
+    }
     const explanationText = summary.simpleExplanation || summary.simple_explanation || "";
     navigator.clipboard.writeText(
       `${topicText}\n\nSummary:\n${summaryBody}\n\nSimplified Explanation:\n${explanationText}`
@@ -244,24 +259,57 @@ export const SummaryDetail = () => {
         </div>
       </div>
 
-      {/* Embedded Multilingual Text-to-Speech Audio Player */}
-      <TextToSpeech
-        text={`${summary.topic || summary.bookTitle || ""}. ${summary.summaryText || summary.summary_text || ""}. ${summary.simpleExplanation || summary.simple_explanation || ""}`}
-        title={`Audio Narration (${currentLangObj.name} - ${currentLangObj.native})`}
-        initialLang={summary.language || "en"}
-      />
-
-      {/* Main AI Summary Block */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-soft-sm space-y-4">
-        <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-          <BookOpen className="w-5 h-5 text-brand-600" />
-          <h3 className="text-base font-bold text-slate-900">
-            AI Summary ({currentLangObj.name})
-          </h3>
+      {/* Main AI Summary Block — Page-by-Page Organization */}
+      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-soft-sm space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <BookOpen className="w-5 h-5 text-brand-600" />
+            <h3 className="text-base sm:text-lg font-bold text-slate-900">
+              AI Summary ({currentLangObj.name})
+            </h3>
+          </div>
+          {pageSummaries.length > 0 && (
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200/60">
+              {pageSummaries.length} {pageSummaries.length === 1 ? "Page" : "Pages"} Extracted
+            </span>
+          )}
         </div>
-        <p className="text-sm sm:text-base text-slate-700 leading-relaxed font-normal">
-          {summary.summaryText || summary.summary_text}
-        </p>
+
+        {pageSummaries.length > 0 ? (
+          <div className="space-y-4">
+            {pageSummaries.map((p, idx) => (
+              <div
+                key={p.pageNumber || idx}
+                className="border border-slate-200/80 rounded-2xl p-5 bg-slate-50/60 hover:bg-slate-50 transition-colors space-y-2.5"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 rounded-lg text-xs font-bold bg-brand-100 text-brand-800 border border-brand-200 shadow-soft-xs">
+                    Page {p.pageNumber} Summary
+                  </span>
+                </div>
+                <p className="text-sm sm:text-base text-slate-700 leading-relaxed font-normal whitespace-pre-line">
+                  {p.summary}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="border border-slate-200/80 rounded-2xl p-5 bg-slate-50/60 space-y-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-200 text-slate-800 border border-slate-300">
+                  Page 1 Summary
+                </span>
+                <span className="text-xs text-slate-400 font-medium">
+                  (Document overview &bull; Page-level boundaries not detected in source)
+                </span>
+              </div>
+              <p className="text-sm sm:text-base text-slate-700 leading-relaxed font-normal">
+                {summary.summaryText || summary.summary_text}
+              </p>
+            </div>
+          </div>
+        )}
 
         {(summary.simpleExplanation || summary.simple_explanation) && (
           <div className="mt-4 p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-start gap-3">

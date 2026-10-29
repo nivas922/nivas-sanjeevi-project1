@@ -27,7 +27,9 @@ export class Summary {
 
     const quickRevision = Array.isArray(rawQuickRev) ? rawQuickRev : (rawQuickRev?.revisionPoints || []);
     const chapters = Array.isArray(rawQuickRev?.chapters) ? rawQuickRev.chapters : [];
-
+    const pageSummaries = Array.isArray(rawQuickRev?.pageSummaries)
+      ? rawQuickRev.pageSummaries
+      : (Array.isArray(row.page_summaries) ? row.page_summaries : []);
 
     return {
       id: row.id,
@@ -45,6 +47,8 @@ export class Summary {
       examples,
       quickRevision,
       chapters,
+      pageSummaries,
+      page_summaries: pageSummaries,
       audio_url: row.audio_url,
       audioUrl: row.audio_url,
       created_at: row.created_at,

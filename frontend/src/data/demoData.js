@@ -138,6 +138,16 @@ export const DEMO_SUMMARIES = [
     length: "Detailed",
     createdDate: "2026-08-28",
     readTime: "6 min read",
+    pageSummaries: [
+      {
+        pageNumber: 1,
+        summary: "The Transmission Control Protocol (TCP) is a connection-oriented transport protocol that provides reliable, ordered, and error-checked delivery of a stream of octets between applications running on hosts communicating via an IP network. TCP breaks user data streams into segments, adds a TCP header containing sequence numbers and checksums, and manages flow control via sliding window mechanisms."
+      },
+      {
+        pageNumber: 2,
+        summary: "Reliable connection establishment is achieved through a three-way handshake (SYN, SYN-ACK, ACK), ensuring both communication endpoints synchronize sequence numbers before data exchange occurs. In contrast to UDP's lightweight stateless datagram delivery, TCP guarantees recovery against packet loss, duplication, and network congestion through additive increase / multiplicative decrease (AIMD) algorithms."
+      }
+    ],
     summaryText: `The Transmission Control Protocol (TCP) is a connection-oriented transport protocol that provides reliable, ordered, and error-checked delivery of a stream of octets between applications running on hosts communicating via an IP network. TCP breaks user data streams into segments, adds a TCP header containing sequence numbers and checksums, and manages flow control via sliding window mechanisms. Reliable connection establishment is achieved through a three-way handshake (SYN, SYN-ACK, ACK), ensuring both communication endpoints synchronize sequence numbers before data exchange occurs. In contrast to UDP's lightweight stateless datagram delivery, TCP guarantees recovery against packet loss, duplication, and network congestion through additive increase / multiplicative decrease (AIMD) algorithms.`,
     simpleExplanation: `Think of TCP like sending certified postal mail with return receipts. Before sending your message, you call the recipient to check if they are ready (Handshake). You number every page (Sequence numbers). If a page gets lost in transit, you re-send just that page. When network traffic gets crowded, TCP automatically slows down so roads don't get jammed!`,
     keyConcepts: [
@@ -272,6 +282,16 @@ export const DEMO_SUMMARIES = [
     length: "Medium",
     createdDate: "2026-08-27",
     readTime: "4 min read",
+    pageSummaries: [
+      {
+        pageNumber: 1,
+        summary: "Object-Oriented Programming (OOP) in Python centers on classes and objects. Encapsulation is the fundamental principle of bundling data attributes and the methods that operate on that data into a single unit (class) while restricting direct external access to internal state components."
+      },
+      {
+        pageNumber: 2,
+        summary: "In Python, encapsulation is implemented conventionally through single underscore (_protected) and double underscore (__private) name mangling. By providing getter and setter properties, classes ensure data integrity, maintain abstraction boundaries, and decouple implementation details from public interfaces."
+      }
+    ],
     summaryText: `Object-Oriented Programming (OOP) in Python centers on classes and objects. Encapsulation is the fundamental principle of bundling data attributes and the methods that operate on that data into a single unit (class) while restricting direct external access to internal state components. In Python, encapsulation is implemented conventionally through single underscore (_protected) and double underscore (__private) name mangling. By providing getter and setter properties, classes ensure data integrity, maintain abstraction boundaries, and decouple implementation details from public interfaces.`,
     simpleExplanation: `Encapsulation is like a medical capsule or a smartphone. The internal electronics and battery are sealed inside a casing. You only interact with the screen and buttons (public methods). You don't directly solder the battery wires to adjust volume (data protection)!`,
     keyConcepts: [

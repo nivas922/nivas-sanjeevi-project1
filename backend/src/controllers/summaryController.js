@@ -82,7 +82,8 @@ export class SummaryController {
 
         const quickRevisionPayload = {
           revisionPoints: aiResult.quickRevision || [],
-          chapters: aiResult.chapters || []
+          chapters: aiResult.chapters || [],
+          pageSummaries: aiResult.pageSummaries || []
         };
 
         updateProgress(95, "Persisting summary to database");
@@ -113,7 +114,8 @@ export class SummaryController {
           bookTitle: book.title,
           topic: book.title,
           simpleExplanation: aiResult.simpleExplanation,
-          audioUrl: ttsResult.audioUrl
+          audioUrl: ttsResult.audioUrl,
+          pageSummaries: aiResult.pageSummaries || summary.pageSummaries || []
         };
       });
 

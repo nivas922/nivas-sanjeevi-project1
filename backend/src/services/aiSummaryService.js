@@ -518,6 +518,126 @@ Return ONLY a valid JSON object:
   }
 
   /**
+   * Generates page-by-page summaries using actual PDF page numbers and page text.
+   */
+  static async generatePageSummaries(chunks, targetLanguage = "en") {
+    if (!Array.isArray(chunks) || chunks.length === 0) {
+      return [];
+    }
+
+    // Group chunks by exact page number
+    const pageMap = new Map();
+    for (const chunk of chunks) {
+      const pageNum = chunk.pageStart || chunk.page_start || 1;
+      if (!pageMap.has(pageNum)) {
+        pageMap.set(pageNum, []);
+      }
+      pageMap.get(pageNum).push(chunk.text || "");
+    }
+
+    const sortedPages = Array.from(pageMap.keys()).sort((a, b) => a - b);
+
+    if (sortedPages.length === 1) {
+      const pageNum = sortedPages[0];
+      const pageText = pageMap.get(pageNum).join("\n\n").trim();
+      if (!pageText) return [];
+
+      const prompt = `You are an expert academic tutor. Summarize PDF page ${pageNum} in language '${targetLanguage}'.
+Do NOT invent facts not present in the text.
+
+Page ${pageNum} Content:
+${pageText.slice(0, 8000)}
+
+Return ONLY a valid JSON object:
+{
+  "pageNumber": ${pageNum},
+  "summary": "Academic summary of page ${pageNum}..."
+}`;
+      try {
+        const raw = await this.callGeminiApiWithRetry(prompt);
+        const parsed = this.parseJsonFromGemini(raw);
+        const summaryText = parsed?.summary || parsed?.overallSummary || (Array.isArray(parsed) ? parsed[0]?.summary : "") || pageText.slice(0, 400);
+        return [{
+          pageNumber: pageNum,
+          summary: summaryText
+        }];
+      } catch (err) {
+        console.warn(`[AI-Summary] Failed to generate single page summary:`, err.message);
+        return [{
+          pageNumber: pageNum,
+          summary: pageText.slice(0, 400)
+        }];
+      }
+    }
+
+    // Multiple distinct pages: batch in groups of up to 6 pages to avoid rate limit spikes
+    const allPageSummaries = [];
+    const BATCH_SIZE = 6;
+
+    for (let i = 0; i < sortedPages.length; i += BATCH_SIZE) {
+      const batchPages = sortedPages.slice(i, i + BATCH_SIZE);
+      const batchInput = batchPages.map((pNum) => {
+        const pText = pageMap.get(pNum).join("\n\n").trim().slice(0, 4000);
+        return `--- PAGE ${pNum} START ---\n${pText}\n--- PAGE ${pNum} END ---`;
+      }).join("\n\n");
+
+      const prompt = `You are an expert academic professor. Summarize each of the following PDF pages separately in language '${targetLanguage}'.
+STRICT RULES:
+1. Provide a distinct, high-quality summary for EACH page based strictly on its text.
+2. Do NOT mix or repeat content between pages.
+3. Return ONLY a valid JSON array matching this schema:
+[
+  ${batchPages.map((p) => `{"pageNumber": ${p}, "summary": "Summary of page ${p} in ${targetLanguage}"}`).join(",\n  ")}
+]
+
+Page Content:
+${batchInput}`;
+
+      try {
+        const raw = await this.callGeminiApiWithRetry(prompt);
+        const parsed = this.parseJsonFromGemini(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          for (const item of parsed) {
+            if (item && item.pageNumber && item.summary) {
+              allPageSummaries.push({
+                pageNumber: Number(item.pageNumber),
+                summary: String(item.summary).trim()
+              });
+            }
+          }
+        } else if (parsed && typeof parsed === "object") {
+          for (const pNum of batchPages) {
+            const sumVal = parsed[pNum] || parsed[`page${pNum}`] || parsed[`Page ${pNum}`] || parsed.summary;
+            if (sumVal) {
+              allPageSummaries.push({
+                pageNumber: pNum,
+                summary: String(sumVal).trim()
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[AI-Summary] Failed to generate batch page summaries:`, err.message);
+      }
+
+      // Ensure every page in this batch has a corresponding summary
+      for (const pNum of batchPages) {
+        const existing = allPageSummaries.find((p) => p.pageNumber === pNum);
+        if (!existing) {
+          const rawText = pageMap.get(pNum).join("\n\n").trim();
+          allPageSummaries.push({
+            pageNumber: pNum,
+            summary: rawText.slice(0, 300) || `Summary for page ${pNum}.`
+          });
+        }
+      }
+    }
+
+    allPageSummaries.sort((a, b) => a.pageNumber - b.pageNumber);
+    return allPageSummaries;
+  }
+
+  /**
    * Main Pipeline Orchestrator:
    * document_chunks -> Bounded Section Summaries -> Chapter Summaries -> Final Textbook Summary
    */
@@ -543,6 +663,12 @@ Return ONLY a valid JSON object:
       const chunkSum = await this.summarizeChunk(chunks[0], targetLanguage);
       const singleChap = await this.summarizeChapter(chunkSum.chapter, [chunkSum], targetLanguage);
       const finalResult = await this.generateFinalBookSummary(bookTitle, subject, [singleChap], targetLanguage);
+      finalResult.pageSummaries = [
+        {
+          pageNumber: chunks[0].pageStart || chunks[0].page_start || 1,
+          summary: chunkSum.summary || finalResult.overallSummary
+        }
+      ];
       if (typeof onProgress === "function") onProgress(100, "Textbook summary completed");
       return finalResult;
     }
@@ -620,6 +746,10 @@ Return ONLY a valid JSON object:
 
     // 5. Final Textbook Summary (collapses 1-chapter books with 0 calls)
     const finalResult = await this.generateFinalBookSummary(bookTitle, subject, chapterSummaries, targetLanguage);
+
+    // 6. Generate Page-by-Page Summaries
+    if (typeof onProgress === "function") onProgress(95, "Generating page-by-page summaries");
+    finalResult.pageSummaries = await this.generatePageSummaries(chunks, targetLanguage);
 
     const duration = Date.now() - startTime;
     const memAfter = process.memoryUsage();
@@ -1098,6 +1228,35 @@ Return ONLY a valid JSON object:
       sourceContent = prompt.slice(0, 300).trim();
     }
 
+    // Check if prompt is requesting page-wise summary breakdown
+    if (prompt.includes("--- PAGE ") || prompt.includes("PDF page")) {
+      const pageBlocks = [...prompt.matchAll(/--- PAGE (\d+) START ---([\s\S]*?)--- PAGE \1 END ---/g)];
+      if (pageBlocks.length > 0) {
+        const results = pageBlocks.map((m) => {
+          const pNum = parseInt(m[1], 10);
+          const pText = m[2].trim();
+          const pSentences = pText.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
+          const pSummary = pSentences.slice(0, 2).join(" ") || pText.slice(0, 200);
+          return {
+            pageNumber: pNum,
+            summary: `Summary of PDF page ${pNum}: ${pSummary}`
+          };
+        });
+        return JSON.stringify(results);
+      }
+      const singleMatch = prompt.match(/PDF page (\d+)/i);
+      if (singleMatch) {
+        const pNum = parseInt(singleMatch[1], 10);
+        const pText = sourceContent || "";
+        const pSentences = pText.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
+        const pSummary = pSentences.slice(0, 2).join(" ") || pText.slice(0, 200);
+        return JSON.stringify({
+          pageNumber: pNum,
+          summary: `Summary of PDF page ${pNum}: ${pSummary}`
+        });
+      }
+    }
+
     const sentences = sourceContent.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
     const firstSentence = sentences[0] || sourceContent.slice(0, 100);
     const secondSentence = sentences[1] || "";
@@ -1185,6 +1344,12 @@ Return ONLY a valid JSON object:
               chapter: `[${targetLangName}] ${c.chapter || "Chapter"}`,
               overview: `[${targetLangName}] ${c.overview || "Overview"}`,
               sourcePages: c.sourcePages || "1-5"
+            })
+          ),
+          pageSummaries: (Array.isArray(src.pageSummaries) ? src.pageSummaries : []).map(
+            (p) => ({
+              pageNumber: p.pageNumber,
+              summary: `[${targetLangName}] ${p.summary}`
             })
           )
         });

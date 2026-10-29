@@ -128,7 +128,8 @@ STRICT TRANSLATION RULES:
   "formulas": [{"name": "Formula Name", "formula": "Formula", "description": "Translated description"}],
   "examples": [{"title": "Example Title", "code": "Code"}],
   "quickRevision": ["Translated revision point"],
-  "chapters": [{"chapter": "Translated Chapter Title", "overview": "Translated overview", "sourcePages": "1-5"}]
+  "chapters": [{"chapter": "Translated Chapter Title", "overview": "Translated overview", "sourcePages": "1-5"}],
+  "pageSummaries": [{"pageNumber": 1, "summary": "Translated summary of page 1"}]
 }
 
 Source Summary JSON:
@@ -140,7 +141,8 @@ ${JSON.stringify({
   formulas: summary.formulas || [],
   examples: summary.examples || [],
   quickRevision: summary.quickRevision?.revisionPoints || summary.quick_revision?.revisionPoints || summary.quickRevision || [],
-  chapters: summary.quickRevision?.chapters || summary.chapters || []
+  chapters: summary.quickRevision?.chapters || summary.chapters || [],
+  pageSummaries: summary.pageSummaries || summary.page_summaries || summary.quickRevision?.pageSummaries || []
 })}`;
 
     let resultPayload = null;
@@ -166,7 +168,13 @@ ${JSON.stringify({
           formulas: parsedFormulas,
           examples: Array.isArray(parsed.examples) ? parsed.examples : (summary.examples || []),
           quickRevision: Array.isArray(parsed.quickRevision) ? parsed.quickRevision : (summary.quickRevision?.revisionPoints || summary.quickRevision || []),
-          chapters: Array.isArray(parsed.chapters) && parsed.chapters.length > 0 ? parsed.chapters : (summary.chapters || summary.quick_revision?.chapters || [])
+          chapters: Array.isArray(parsed.chapters) && parsed.chapters.length > 0 ? parsed.chapters : (summary.chapters || summary.quick_revision?.chapters || []),
+          pageSummaries: Array.isArray(parsed.pageSummaries) && parsed.pageSummaries.length > 0
+            ? parsed.pageSummaries
+            : ((summary.pageSummaries || summary.page_summaries || []).map((p) => ({
+                pageNumber: p.pageNumber,
+                summary: `[${targetConfig.name}] ${p.summary}`
+              })))
         };
       }
     } catch (err) {
@@ -200,6 +208,10 @@ ${JSON.stringify({
           chapter: `[${targetConfig.name}] ${c.chapter || "Chapter"}`,
           overview: `[${targetConfig.name}] ${c.overview || "Overview"}`,
           sourcePages: c.sourcePages || "1-5"
+        })),
+        pageSummaries: (summary.pageSummaries || summary.page_summaries || []).map((p) => ({
+          pageNumber: p.pageNumber,
+          summary: `[${targetConfig.name}] ${p.summary}`
         }))
       };
     }

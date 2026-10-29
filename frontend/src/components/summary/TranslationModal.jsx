@@ -101,13 +101,28 @@ export const TranslationModal = ({
         ) : translatedData ? (
           <div className="space-y-5 animate-in fade-in duration-200">
             {/* Translated Summary */}
-            <div className="p-5 rounded-2xl bg-brand-50/50 border border-brand-100">
+            <div className="p-5 rounded-2xl bg-brand-50/50 border border-brand-100 space-y-3">
               <h5 className="text-xs font-bold uppercase tracking-wider text-brand-900 mb-2">
                 📖 Translated AI Summary ({currentLangObj.name})
               </h5>
-              <p className="text-sm text-slate-800 leading-relaxed font-medium">
-                {translatedData.summaryText}
-              </p>
+              {Array.isArray(translatedData.pageSummaries) && translatedData.pageSummaries.length > 0 ? (
+                <div className="space-y-3">
+                  {translatedData.pageSummaries.map((p, idx) => (
+                    <div key={p.pageNumber || idx} className="bg-white/90 border border-brand-200/70 rounded-xl p-3.5 space-y-1">
+                      <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-brand-100 text-brand-800 border border-brand-200">
+                        Page {p.pageNumber} Summary
+                      </span>
+                      <p className="text-xs sm:text-sm text-slate-800 leading-relaxed font-medium whitespace-pre-line">
+                        {p.summary}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-800 leading-relaxed font-medium">
+                  {translatedData.summaryText}
+                </p>
+              )}
             </div>
 
             {/* Translated Simple Explanation */}

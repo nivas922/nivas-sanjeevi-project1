@@ -75,6 +75,20 @@ export class DocumentProcessorService {
       const pageNum = page.pageNumber;
       const lines = (page.text || "").split("\n");
 
+      // When advancing to a new page, flush accumulated text so chunks retain exact page boundaries
+      if (currentTextBuffer.length > 0 && activePageStart !== pageNum) {
+        sections.push({
+          chapterTitle: activeChapterTitle,
+          sectionTitle: activeSectionTitle,
+          pageStart: activePageStart,
+          pageEnd: activePageEnd,
+          text: currentTextBuffer.join("\n\n")
+        });
+        currentTextBuffer = [];
+        activePageStart = pageNum;
+        activePageEnd = pageNum;
+      }
+
       for (const rawLine of lines) {
         const line = rawLine.trim();
         if (line.length === 0) continue;

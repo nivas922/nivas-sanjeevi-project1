@@ -12,15 +12,29 @@ export const exportService = {
   },
 
   exportSummaryAsMarkdown(summary) {
-    const md = `# ${summary.bookTitle}
-## ${summary.chapterTitle}
-**Topic:** ${summary.topic}
-**Difficulty:** ${summary.difficulty} | **Generated Date:** ${summary.createdDate}
+    const pageSummaries = (
+      Array.isArray(summary.pageSummaries) && summary.pageSummaries.length > 0
+        ? summary.pageSummaries
+        : Array.isArray(summary.page_summaries) && summary.page_summaries.length > 0
+        ? summary.page_summaries
+        : Array.isArray(summary.quickRevision?.pageSummaries) && summary.quickRevision.pageSummaries.length > 0
+        ? summary.quickRevision.pageSummaries
+        : []
+    );
+
+    const summaryContent = pageSummaries.length > 0
+      ? pageSummaries.map((p) => `#### Page ${p.pageNumber} Summary\n${p.summary}`).join("\n\n")
+      : (summary.summaryText || summary.summary_text || "");
+
+    const md = `# ${summary.bookTitle || summary.topic || "Textbook"}
+## ${summary.chapterTitle || "Chapter Overview"}
+**Topic:** ${summary.topic || summary.bookTitle || "Summary"}
+**Difficulty:** ${summary.difficulty || "Intermediate"} | **Generated Date:** ${summary.createdDate || new Date().toLocaleDateString()}
 
 ---
 
 ### 📖 AI Summary
-${summary.summaryText}
+${summaryContent}
 
 ### 💡 Simplified Explanation
 ${summary.simpleExplanation}

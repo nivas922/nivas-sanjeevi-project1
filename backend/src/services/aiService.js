@@ -40,7 +40,8 @@ export class AiService {
       formulas: fullResult.formulas,
       examples: fullResult.examples,
       quickRevision: fullResult.quickRevision,
-      chapters: fullResult.chapters
+      chapters: fullResult.chapters,
+      pageSummaries: fullResult.pageSummaries || []
     };
   }
 
