@@ -7,6 +7,7 @@ import { ActivityLog } from "../models/ActivityLog.js";
 import { StorageService } from "../services/storageService.js";
 import { CloudinaryService } from "../services/cloudinaryService.js";
 import { withTransaction } from "../config/db.js";
+import { env } from "../config/env.js";
 import { DEFAULT_USER_ID, resolveAuthUserId } from "../middleware/auth.js";
 
 export class BookController {
@@ -298,6 +299,61 @@ export class BookController {
           error: error.message
         });
       }
+      next(error);
+    }
+  }
+
+  // DELETE /books/:id
+  static async deleteBook(req, res, next) {
+    try {
+      const bookId = req.params.id;
+      if (!bookId || typeof bookId !== "string" || !bookId.trim()) {
+        return res.status(400).json({ success: false, error: "Invalid textbook ID." });
+      }
+
+      const book = await Book.findById(bookId);
+      if (!book) {
+        return res.status(404).json({ success: false, error: "Textbook not found." });
+      }
+
+      // Authorization: only the owner or default catalog user can delete
+      const authUserId = resolveAuthUserId(req) || DEFAULT_USER_ID;
+      if (book.user_id && book.user_id !== DEFAULT_USER_ID && authUserId !== book.user_id) {
+        return res.status(403).json({
+          success: false,
+          error: "Access denied. You do not have permission to delete this textbook."
+        });
+      }
+
+      // 1. Delete associated document chunks (preserves unrelated summaries and quizzes)
+      await DocumentChunk.deleteByBookId(bookId).catch(() => {});
+
+      // 2. Delete the textbook record
+      await Book.deleteById(bookId);
+
+      // 3. Remove physical local file if present on disk
+      if (book.fileName) {
+        const uploadDir = path.resolve(env.UPLOAD_DIR);
+        const localPath = path.resolve(uploadDir, book.fileName);
+        if (localPath.startsWith(uploadDir + path.sep) && fs.existsSync(localPath)) {
+          try { fs.unlinkSync(localPath); } catch {}
+        }
+      }
+
+      // 4. Clean up Cloudinary asset if configured
+      if (CloudinaryService.isConfigured() && book.fileName) {
+        try {
+          const resourceType = StorageService.resolveCloudinaryResourceType(book);
+          await CloudinaryService.destroyAsset(book.fileName, resourceType);
+        } catch {}
+      }
+
+      return res.status(200).json({
+        success: true,
+        status: "success",
+        message: `Textbook '${book.title}' deleted successfully.`
+      });
+    } catch (error) {
       next(error);
     }
   }

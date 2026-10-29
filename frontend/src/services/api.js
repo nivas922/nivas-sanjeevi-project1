@@ -18,7 +18,13 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const resolveBackendUrl = (pathOrUrl) => {
   if (!pathOrUrl || typeof pathOrUrl !== "string") return "";
-  const trimmed = pathOrUrl.trim();
+  let trimmed = pathOrUrl.trim();
+
+  // If Cloudinary raw PDF asset, append fl_inline flag to ensure browser renders inline instead of triggering download
+  if (trimmed.includes("cloudinary.com") && trimmed.includes("/raw/upload/") && !trimmed.includes("fl_inline")) {
+    trimmed = trimmed.replace("/raw/upload/", "/raw/upload/fl_inline/");
+  }
+
   if (
     trimmed.startsWith("http://") ||
     trimmed.startsWith("https://") ||
@@ -831,5 +837,28 @@ export const api = {
       console.warn("getBookById API notice:", err.message);
     }
     return storageService.getTextbookById(id);
+  },
+
+  async deleteTextbook(id) {
+    if (!id) return { success: false, error: "Textbook ID is required." };
+    try {
+      const res = await fetch(`${API_BASE_URL}/books/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        storageService.deleteTextbook(id);
+        return data;
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Failed to delete textbook (HTTP ${res.status})`);
+    } catch (err) {
+      if (id.startsWith("tb-") || id.startsWith("demo-")) {
+        storageService.deleteTextbook(id);
+        return { success: true, localOnly: true };
+      }
+      throw err;
+    }
   }
 };

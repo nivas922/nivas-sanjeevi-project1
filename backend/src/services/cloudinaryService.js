@@ -203,6 +203,7 @@ export class CloudinaryService {
             return reject(err);
           }
           res.setHeader("Content-Type", streamRes.headers["content-type"] || "application/pdf");
+          res.setHeader("Content-Disposition", "inline");
           if (streamRes.headers["content-length"]) {
             res.setHeader("Content-Length", streamRes.headers["content-length"]);
           }

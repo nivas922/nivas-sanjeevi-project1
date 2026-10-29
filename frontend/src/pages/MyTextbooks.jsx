@@ -63,7 +63,7 @@ export const MyTextbooks = () => {
     }
   };
 
-  const handleOpenPdf = async (e, book) => {
+  const handleOpenPdf = (e, book) => {
     if (e && e.stopPropagation) {
       e.stopPropagation();
     }
@@ -79,54 +79,64 @@ export const MyTextbooks = () => {
       rawUrl = `/uploads/${book.fileName}`;
     }
 
-    // 2. If not stored locally on client, check backend server record
-    if (!rawUrl && book.id) {
-      try {
-        const serverBook = await api.getBookById(book.id);
-        if (serverBook) {
-          rawUrl = serverBook.fileUrl || serverBook.file_url || serverBook.pdfUrl || serverBook.pdf_url;
-          if (!rawUrl && serverBook.fileName) {
-            rawUrl = `/uploads/${serverBook.fileName}`;
-          }
-        }
-      } catch (err) {
-        console.warn("Failed to retrieve book metadata from server:", err);
+    // 2. If genuine URL is directly available, open synchronously from click event
+    if (rawUrl && typeof rawUrl === "string" && rawUrl.trim()) {
+      const targetUrl = resolveBackendUrl(rawUrl);
+      if (!targetUrl) {
+        showError(`Unable to resolve PDF link for "${book.title}".`);
+        return;
       }
-    }
-
-    // 3. Gracefully notify if original PDF is genuinely not available
-    if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
-      showError(`Original PDF is not available for "${book.title}".`);
+      const newWin = window.open(targetUrl, "_blank", "noopener,noreferrer");
+      if (!newWin) {
+        showError("Pop-up blocked. Please allow pop-ups for this site to view the PDF.");
+      }
       return;
     }
 
-    // 4. Resolve fully qualified URL safely
-    const targetUrl = resolveBackendUrl(rawUrl);
-    if (!targetUrl) {
-      showError(`Unable to resolve PDF link for "${book.title}".`);
+    // 3. Fallback: if not stored locally on client, retrieve from backend record
+    if (book.id) {
+      let preOpenedTab = null;
+      try {
+        preOpenedTab = window.open("", "_blank");
+      } catch {}
+
+      api.getBookById(book.id)
+        .then((serverBook) => {
+          const fetchedUrl = serverBook?.fileUrl || serverBook?.file_url || (serverBook?.fileName ? `/uploads/${serverBook.fileName}` : null);
+          if (fetchedUrl) {
+            const targetUrl = resolveBackendUrl(fetchedUrl);
+            if (preOpenedTab) {
+              preOpenedTab.location.href = targetUrl;
+            } else {
+              window.open(targetUrl, "_blank", "noopener,noreferrer");
+            }
+          } else {
+            if (preOpenedTab) preOpenedTab.close();
+            showError(`Original PDF is not available for "${book.title}".`);
+          }
+        })
+        .catch(() => {
+          if (preOpenedTab) preOpenedTab.close();
+          showError(`Failed to retrieve PDF link for "${book.title}".`);
+        });
       return;
     }
 
-    // 5. Open genuine original PDF in a new browser tab/viewer
-    try {
-      const link = document.createElement("a");
-      link.href = targetUrl;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (openErr) {
-      window.open(targetUrl, "_blank", "noopener,noreferrer");
-    }
+    showError(`Original PDF is not available for "${book.title}".`);
   };
 
-  const handleDelete = (e, bookId, bookTitle) => {
+  const handleDelete = async (e, bookId, bookTitle) => {
     e.stopPropagation();
-    if (confirm(`Are you sure you want to remove "${bookTitle}"?`)) {
+    if (!window.confirm(`Are you sure you want to remove "${bookTitle}"?`)) {
+      return;
+    }
+    try {
+      await api.deleteTextbook(bookId);
       storageService.deleteTextbook(bookId);
-      refreshLearningData();
+      await refreshLearningData();
       showSuccess(`"${bookTitle}" removed from library.`);
+    } catch (err) {
+      showError(err.message || `Failed to delete "${bookTitle}".`);
     }
   };
 

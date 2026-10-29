@@ -35,6 +35,7 @@ app.use(
   helmet({
     crossOriginResourcePolicy: false,
     contentSecurityPolicy: false,
+    xDownloadOptions: false,
     hsts: env.NODE_ENV === "production" ? { maxAge: 31536000, includeSubDomains: true } : false
   })
 );
@@ -82,8 +83,19 @@ if (env.NODE_ENV !== "test") {
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
-// Static uploads directory (Audio files, books, profile pics)
-app.use("/uploads", express.static(env.UPLOAD_DIR));
+// Static uploads directory (Audio files, books, profile pics) - Configure inline PDF viewing
+app.use(
+  "/uploads",
+  express.static(env.UPLOAD_DIR, {
+    setHeaders: (res, filePath) => {
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === ".pdf") {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", "inline");
+      }
+    }
+  })
+);
 
 // Rate limiter for standard requests
 app.use(apiRateLimiter);
