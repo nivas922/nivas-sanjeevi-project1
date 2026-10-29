@@ -275,4 +275,47 @@ export class SummaryController {
       next(error);
     }
   }
+
+  // DELETE /summaries/:id
+  static async deleteSummary(req, res, next) {
+    try {
+      const summaryId = req.params.id;
+      if (!summaryId || typeof summaryId !== "string" || !summaryId.trim()) {
+        return res.status(400).json({ success: false, error: "Invalid summary ID." });
+      }
+
+      const summary = await Summary.findById(summaryId);
+      if (!summary) {
+        return res.status(404).json({ success: false, error: "Summary not found." });
+      }
+
+      // Authorization: only the owner or default user can delete
+      const ownerId = summary.user_id || summary.userId;
+      if (ownerId && ownerId !== DEFAULT_USER_ID) {
+        const authUserId = resolveAuthUserId(req);
+        if (!authUserId) {
+          return res.status(401).json({
+            success: false,
+            error: "Authentication token required to delete this summary."
+          });
+        }
+        if (authUserId !== ownerId) {
+          return res.status(403).json({
+            success: false,
+            error: "Access denied. You do not have permission to delete this summary."
+          });
+        }
+      }
+
+      await Summary.deleteById(summaryId);
+
+      return res.status(200).json({
+        success: true,
+        status: "success",
+        message: "Summary deleted successfully."
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

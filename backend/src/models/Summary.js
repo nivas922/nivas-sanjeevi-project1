@@ -129,4 +129,8 @@ export class Summary {
     await dbRun("UPDATE summaries SET audio_url = ? WHERE id = ?", [audio_url, id]);
     return this.findById(id);
   }
+
+  static async deleteById(id) {
+    await dbRun("DELETE FROM summaries WHERE id = ?", [id]);
+  }
 }

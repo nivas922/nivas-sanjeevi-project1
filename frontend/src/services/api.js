@@ -866,6 +866,39 @@ export const api = {
     }
   },
 
+  async deleteSummary(id) {
+    if (!id) return { success: false, error: "Summary ID is required." };
+    try {
+      const res = await fetch(`${API_BASE_URL}/summaries/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        storageService.deleteSummary(id);
+        return data;
+      }
+      const errData = await res.json().catch(() => ({}));
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(errData.error || `Access denied (HTTP ${res.status})`);
+      }
+      if (res.status === 404 && (id.startsWith("sum-") || id.startsWith("demo-"))) {
+        storageService.deleteSummary(id);
+        return { success: true, localOnly: true };
+      }
+      throw new Error(errData.error || `Failed to delete summary (HTTP ${res.status})`);
+    } catch (err) {
+      if (err.message && (err.message.includes("Access denied") || err.message.includes("Authentication"))) {
+        throw err;
+      }
+      if (id.startsWith("sum-") || id.startsWith("demo-")) {
+        storageService.deleteSummary(id);
+        return { success: true, localOnly: true };
+      }
+      throw err;
+    }
+  },
+
   async getBookPdfBlob(book) {
     if (!book) throw new Error("No textbook details provided.");
 

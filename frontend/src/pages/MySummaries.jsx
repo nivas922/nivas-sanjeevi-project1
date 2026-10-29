@@ -10,7 +10,8 @@ import {
   Calendar,
   Sparkles,
   ArrowRight,
-  Clock
+  Clock,
+  Trash2
 } from "lucide-react";
 import { useLearning } from "../context/LearningContext";
 import { Button } from "../components/common/Button";
@@ -19,10 +20,12 @@ import { EmptyState } from "../components/common/EmptyState";
 import { TranslationModal } from "../components/summary/TranslationModal";
 import { exportService } from "../services/exportService";
 import { useToast } from "../context/ToastContext";
+import { api } from "../services/api";
+import { storageService } from "../services/storageService";
 
 export const MySummaries = () => {
-  const { summaries } = useLearning();
-  const { showSuccess } = useToast();
+  const { summaries, refreshLearningData } = useLearning();
+  const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -40,6 +43,26 @@ export const MySummaries = () => {
     e.stopPropagation();
     exportService.exportSummaryAsMarkdown(sum);
     showSuccess(`Summary for "${sum.topic}" downloaded as Markdown!`);
+  };
+
+  const handleDelete = async (e, sum) => {
+    e.stopPropagation();
+    if (!sum || !sum.id) return;
+    const title = sum.topic || sum.bookTitle || "this summary";
+    if (!window.confirm(`Are you sure you want to delete the summary for "${title}"?`)) {
+      return;
+    }
+
+    try {
+      await api.deleteSummary(sum.id);
+      storageService.deleteSummary(sum.id);
+      if (typeof refreshLearningData === "function") {
+        await refreshLearningData();
+      }
+      showSuccess(`Summary for "${title}" deleted successfully.`);
+    } catch (err) {
+      showError(err.message || `Failed to delete summary "${title}".`);
+    }
   };
 
   return (
@@ -146,6 +169,16 @@ export const MySummaries = () => {
                     title="Download Summary (Markdown)"
                   >
                     <Download className="w-4 h-4" />
+                  </button>
+
+                  {/* Delete Action */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleDelete(e, sum)}
+                    className="p-2 rounded-xl text-slate-600 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-colors"
+                    title="Delete Summary"
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
 

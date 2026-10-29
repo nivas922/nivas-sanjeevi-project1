@@ -10,6 +10,7 @@ router.get("/summarize/status/:bookId", SummaryController.getSummarizeStatus);
 router.get("/summaries/status/:bookId", SummaryController.getSummarizeStatus);
 router.get("/summaries", SummaryController.getUserSummaries);
 router.get("/summaries/:id", SummaryController.getSummaryById);
+router.delete("/summaries/:id", SummaryController.deleteSummary);
 router.post("/summaries/:id/translate", aiRateLimiter, validateTranslateSummary, SummaryController.translateExistingSummary);
 
 export default router;

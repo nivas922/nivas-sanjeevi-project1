@@ -128,6 +128,12 @@ export const storageService = {
     return list.find(s => s.id === id) || null;
   },
 
+  deleteSummary(id) {
+    const list = this.getSummaries().filter(s => s.id !== id);
+    localStorage.setItem(STORAGE_KEYS.SUMMARIES, JSON.stringify(list));
+    return true;
+  },
+
   addSummary(summary) {
     const list = this.getSummaries();
     const updated = [summary, ...list];
