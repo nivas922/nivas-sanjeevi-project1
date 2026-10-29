@@ -20,9 +20,13 @@ export const resolveBackendUrl = (pathOrUrl) => {
   if (!pathOrUrl || typeof pathOrUrl !== "string") return "";
   let trimmed = pathOrUrl.trim();
 
-  // If Cloudinary raw PDF asset, append fl_inline flag to ensure browser renders inline instead of triggering download
-  if (trimmed.includes("cloudinary.com") && trimmed.includes("/raw/upload/") && !trimmed.includes("fl_inline")) {
-    trimmed = trimmed.replace("/raw/upload/", "/raw/upload/fl_inline/");
+  // If Cloudinary upload asset without inline flag, append fl_inline to request inline delivery
+  if (trimmed.includes("cloudinary.com") && !trimmed.includes("fl_inline")) {
+    if (trimmed.includes("/raw/upload/")) {
+      trimmed = trimmed.replace("/raw/upload/", "/raw/upload/fl_inline/");
+    } else if (trimmed.includes("/image/upload/")) {
+      trimmed = trimmed.replace("/image/upload/", "/image/upload/fl_inline/");
+    }
   }
 
   if (
@@ -860,5 +864,42 @@ export const api = {
       }
       throw err;
     }
+  },
+
+  async getBookPdfBlob(book) {
+    if (!book) throw new Error("No textbook details provided.");
+
+    // 1. Direct fetch if fileUrl / rawUrl is present
+    const rawUrl = book.fileUrl || book.file_url || book.pdfUrl || book.pdf_url;
+    if (rawUrl && typeof rawUrl === "string" && rawUrl.trim()) {
+      const targetUrl = resolveBackendUrl(rawUrl);
+      if (targetUrl) {
+        try {
+          const res = await fetch(targetUrl);
+          if (res.ok) {
+            const rawBlob = await res.blob();
+            return new Blob([rawBlob], { type: "application/pdf" });
+          }
+        } catch (fetchErr) {
+          console.warn("Direct PDF fetch failed, falling back to proxy:", fetchErr.message);
+        }
+      }
+    }
+
+    // 2. Fetch via backend proxy /api/books/:id/file
+    if (book.id) {
+      const proxyUrl = resolveBackendUrl(`/api/books/${book.id}/file`);
+      const token = storageService.getToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(proxyUrl, { headers });
+      if (res.ok) {
+        const rawBlob = await res.blob();
+        return new Blob([rawBlob], { type: "application/pdf" });
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Failed to fetch PDF (HTTP ${res.status})`);
+    }
+
+    throw new Error("Unable to locate PDF file for textbook.");
   }
 };

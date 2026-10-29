@@ -261,15 +261,6 @@ export class BookController {
         return res.status(404).json({ success: false, error: "Book not found." });
       }
 
-      // Authenticated access check: Token MUST be provided and cryptographically valid
-      const authUserId = resolveAuthUserId(req);
-      if (!authUserId) {
-        return res.status(401).json({
-          success: false,
-          error: "Authentication token required to access textbook file."
-        });
-      }
-
       // Fail-closed ownership validation:
       // 1. Missing, null, undefined, or empty owner ID is strictly rejected
       const ownerId = book.user_id ? String(book.user_id).trim() : "";
@@ -280,15 +271,22 @@ export class BookController {
         });
       }
 
-      // 2. Default/public catalog books are accessible to authenticated users
-      if (ownerId === DEFAULT_USER_ID) {
-        // Authenticated user permitted to access public catalog textbook
-      } else if (authUserId !== ownerId) {
-        // Private book: must match authenticated user exactly
-        return res.status(403).json({
-          success: false,
-          error: "Access denied. You do not have permission to access this textbook file."
-        });
+      // 2. Default/public catalog books are accessible to everyone
+      // 3. Private books require authenticated access matching the exact owner
+      if (ownerId !== DEFAULT_USER_ID) {
+        const authUserId = resolveAuthUserId(req);
+        if (!authUserId) {
+          return res.status(401).json({
+            success: false,
+            error: "Authentication token required to access textbook file."
+          });
+        }
+        if (authUserId !== ownerId) {
+          return res.status(403).json({
+            success: false,
+            error: "Access denied. You do not have permission to access this textbook file."
+          });
+        }
       }
 
       await StorageService.deliverBookFile(book, req, res);

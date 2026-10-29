@@ -115,7 +115,8 @@ export class CloudinaryService {
       throw new Error("Invalid input: uploadBuffer requires a non-empty Buffer or Uint8Array.");
     }
 
-    const isImage = mimeType && mimeType.startsWith("image/");
+    const isPdf = (mimeType === "application/pdf") || (originalName && originalName.toLowerCase().endsWith(".pdf"));
+    const isImage = (mimeType && mimeType.startsWith("image/")) || isPdf;
     const resourceType = isImage ? "image" : "raw";
     const publicId = this.getUserScopedPublicId(userId, fileHash, resourceType);
 
@@ -125,6 +126,10 @@ export class CloudinaryService {
       public_id: publicId,
       overwrite: true
     };
+
+    if (isPdf) {
+      uploadOptions.format = "pdf";
+    }
 
     if (Array.isArray(tags) && tags.length > 0) {
       uploadOptions.tags = tags.filter((t) => typeof t === "string" && t.trim().length > 0);
@@ -181,7 +186,8 @@ export class CloudinaryService {
     return cloudinary.utils.private_download_url(publicId, "", {
       resource_type: resourceType,
       type: "authenticated",
-      expires_at: expiresAt
+      expires_at: expiresAt,
+      attachment: false
     });
   }
 
@@ -189,7 +195,7 @@ export class CloudinaryService {
    * Streams authenticated Cloudinary asset directly to an HTTP response.
    * Keeps Cloudinary internal URLs and signed tokens entirely server-side.
    */
-  static async streamAuthenticatedAsset(publicId, resourceType = "raw", res) {
+  static async streamAuthenticatedAsset(publicId, resourceType = "raw", res, book = null) {
     this.ensureConfigured();
     const signedUrl = this.generateSignedUrl(publicId, resourceType);
 
@@ -202,8 +208,18 @@ export class CloudinaryService {
             err.statusCode = streamRes.statusCode;
             return reject(err);
           }
-          res.setHeader("Content-Type", streamRes.headers["content-type"] || "application/pdf");
-          res.setHeader("Content-Disposition", "inline");
+
+          const filename = (book && (book.fileName || book.title)) || publicId;
+          const ext = path.extname(filename).toLowerCase();
+          const isPdf = ext === ".pdf" ||
+                        publicId.toLowerCase().includes(".pdf") ||
+                        (book && book.title && book.title.toLowerCase().includes(".pdf")) ||
+                        (streamRes.headers["content-type"] && streamRes.headers["content-type"].includes("pdf")) ||
+                        resourceType === "raw";
+
+          const mimeType = isPdf ? "application/pdf" : (streamRes.headers["content-type"] || "application/octet-stream");
+          res.setHeader("Content-Type", mimeType);
+          res.setHeader("Content-Disposition", `inline; filename="${path.basename(filename)}"`);
           if (streamRes.headers["content-length"]) {
             res.setHeader("Content-Length", streamRes.headers["content-length"]);
           }

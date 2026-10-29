@@ -127,7 +127,7 @@ export class StorageService {
     if (fileName.includes("/raw/")) return "raw";
 
     const ext = path.extname(fileName).toLowerCase();
-    const imageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"];
+    const imageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".pdf"];
     if (imageExtensions.includes(ext)) return "image";
 
     const url = book.fileUrl || book.file_url || "";
@@ -200,7 +200,7 @@ export class StorageService {
     // 2. Check authenticated Cloudinary storage if configured
     if (CloudinaryService.isConfigured() && book.fileName) {
       const resourceType = StorageService.resolveCloudinaryResourceType(book);
-      return await CloudinaryService.streamAuthenticatedAsset(book.fileName, resourceType, res);
+      return await CloudinaryService.streamAuthenticatedAsset(book.fileName, resourceType, res, book);
     }
 
     const notFoundErr = new Error("Textbook file not found in storage.");
