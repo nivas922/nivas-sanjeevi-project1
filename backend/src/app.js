@@ -27,6 +27,9 @@ const __dirname = path.dirname(__filename);
 
 export const app = express();
 
+// Trust reverse proxies (Render, Cloudflare) for accurate protocol and IP detection
+app.set("trust proxy", 1);
+
 // Security middleware
 app.use(
   helmet({

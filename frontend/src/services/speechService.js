@@ -1,4 +1,4 @@
-import { api } from "./api";
+import { api, resolveBackendUrl } from "./api";
 
 // Supported Indian languages and English BCP-47 mapping per Requirement 3
 export const LANGUAGE_LOCALE_MAP = {
@@ -28,10 +28,20 @@ class SpeechService {
     this.listeners = [];
     this.currentUtterance = null;
     this.currentAudio = null;
+    this.currentObjectUrl = null;
+    this.currentRate = 1.0;
     this.isSpeaking = false;
     this.isPaused = false;
     this.heartbeatTimer = null;
     this.initVoices();
+  }
+
+  setRate(rate) {
+    const clamped = Math.max(0.5, Math.min(2.0, Number(rate) || 1.0));
+    this.currentRate = clamped;
+    if (this.currentAudio) {
+      this.currentAudio.playbackRate = clamped;
+    }
   }
 
   initVoices() {
@@ -231,9 +241,35 @@ class SpeechService {
   playAudioUrl(url, { rate = 1.0, onStart = () => {}, onEnd = () => {}, onPause = () => {}, onResume = () => {}, onError = () => {} } = {}) {
     this.stop();
 
-    const audio = new Audio(url);
+    if (!url) {
+      const err = new Error("No audio URL provided for playback.");
+      onError(err);
+      return;
+    }
+
+    const resolvedUrl = resolveBackendUrl(url);
+
+    // Revoke previous object URL if needed to avoid memory leaks
+    if (this.currentObjectUrl && this.currentObjectUrl !== resolvedUrl) {
+      try {
+        URL.revokeObjectURL(this.currentObjectUrl);
+      } catch (e) {
+        // ignore
+      }
+      this.currentObjectUrl = null;
+    }
+
+    if (resolvedUrl.startsWith("blob:")) {
+      this.currentObjectUrl = resolvedUrl;
+    }
+
+    const audio = new Audio();
+    audio.preload = "auto";
+    audio.src = resolvedUrl;
     this.currentAudio = audio;
-    audio.playbackRate = Math.max(0.5, Math.min(2.0, rate));
+    const clampedRate = Math.max(0.5, Math.min(2.0, Number(rate) || 1.0));
+    this.currentRate = clampedRate;
+    audio.playbackRate = clampedRate;
 
     audio.onplay = () => {
       this.isSpeaking = true;
@@ -254,25 +290,66 @@ class SpeechService {
         this.isSpeaking = false;
         this.isPaused = false;
         this.currentAudio = null;
+        if (this.currentObjectUrl) {
+          try {
+            URL.revokeObjectURL(this.currentObjectUrl);
+          } catch (e) {
+            // ignore
+          }
+          this.currentObjectUrl = null;
+        }
         onEnd();
       }
     };
 
     audio.onerror = (e) => {
       if (this.currentAudio === audio) {
+        const mediaErr = audio.error;
+        let errMsg = "Audio playback error occurred.";
+        if (mediaErr) {
+          if (mediaErr.code === 4) {
+            errMsg = "Failed to load audio because no supported source was found or the format is incompatible.";
+          } else if (mediaErr.code === 2) {
+            errMsg = "Network error occurred while loading audio stream.";
+          } else if (mediaErr.code === 3) {
+            errMsg = "Audio decoding error occurred during playback.";
+          } else if (mediaErr.message) {
+            errMsg = mediaErr.message;
+          }
+        }
+        const err = new Error(errMsg);
+        err.mediaError = mediaErr;
         this.isSpeaking = false;
         this.isPaused = false;
         this.currentAudio = null;
-        onError(e);
+        if (this.currentObjectUrl) {
+          try {
+            URL.revokeObjectURL(this.currentObjectUrl);
+          } catch (errRevoke) {
+            // ignore
+          }
+          this.currentObjectUrl = null;
+        }
+        onError(err);
       }
     };
 
     audio.play().catch(err => {
-      console.warn("Audio playback failed:", err);
-      this.isSpeaking = false;
-      this.isPaused = false;
-      this.currentAudio = null;
-      onError(err);
+      console.warn("Audio playback initiation failed:", err);
+      if (this.currentAudio === audio) {
+        this.isSpeaking = false;
+        this.isPaused = false;
+        this.currentAudio = null;
+        if (this.currentObjectUrl) {
+          try {
+            URL.revokeObjectURL(this.currentObjectUrl);
+          } catch (errRevoke) {
+            // ignore
+          }
+          this.currentObjectUrl = null;
+        }
+        onError(err);
+      }
     });
   }
 
@@ -378,10 +455,12 @@ class SpeechService {
     // 2. Browser voice is unavailable for this language.
     // NEVER fall back to an English voice or pretend Tamil is working!
     // Try the project's backend TTS service for authentic audio:
+    let backendErrorMessage = null;
     try {
       const res = await api.textToSpeech(cleanText, baseLang);
       if (res && res.audioUrl) {
-        this.playAudioUrl(res.audioUrl, {
+        const resolvedAudioUrl = resolveBackendUrl(res.audioUrl);
+        this.playAudioUrl(resolvedAudioUrl, {
           rate,
           onStart: () => onStart({ mode: "backend", voice: res.voiceModel || `${meta.name} Cloud TTS`, lang: bcp47 }),
           onEnd,
@@ -389,18 +468,20 @@ class SpeechService {
           onResume,
           onError
         });
-        return { mode: "backend", audioUrl: res.audioUrl };
+        return { mode: "backend", audioUrl: resolvedAudioUrl };
       }
     } catch (backendErr) {
       console.warn("Backend TTS service notice:", backendErr.message);
+      backendErrorMessage = backendErr.message;
     }
 
     // 3. Neither browser voice nor backend TTS is available.
     // Return structured error with clear instructions on enabling the language voice.
-    const err = new Error(
-      `A speech voice for ${meta.name} (${bcp47}) is not installed on this browser or operating system.`
-    );
-    err.code = "VOICE_UNAVAILABLE";
+    const errMessage = backendErrorMessage
+      ? `Cloud Text-to-Speech service unavailable: ${backendErrorMessage}`
+      : `A speech voice for ${meta.name} (${bcp47}) is not installed on this browser or operating system.`;
+    const err = new Error(errMessage);
+    err.code = backendErrorMessage ? "TTS_SERVICE_ERROR" : "VOICE_UNAVAILABLE";
     err.language = baseLang;
     err.bcp47 = bcp47;
     err.langName = meta.name;
@@ -442,6 +523,14 @@ class SpeechService {
       this.currentAudio.pause();
       this.currentAudio.currentTime = 0;
       this.currentAudio = null;
+    }
+    if (this.currentObjectUrl) {
+      try {
+        URL.revokeObjectURL(this.currentObjectUrl);
+      } catch (e) {
+        // ignore
+      }
+      this.currentObjectUrl = null;
     }
     if (this.synth) {
       try {

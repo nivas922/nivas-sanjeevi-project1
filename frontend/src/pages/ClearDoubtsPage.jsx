@@ -30,7 +30,7 @@ import { VoiceInputButton } from "../components/chat/VoiceInputButton";
 export const ClearDoubtsPage = () => {
   const { user } = useAuth();
   const { activeLanguage, textbooks, currentBook, setCurrentBook } = useLearning();
-  const { showSuccess, showInfo, showWarning } = useToast();
+  const { showSuccess, showInfo, showWarning, showError } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -215,7 +215,12 @@ Select a textbook from the dropdown above to start.`,
       rate: 1.0,
       onStart: () => setSpeakingId(id),
       onEnd: () => setSpeakingId(null),
-      onError: () => setSpeakingId(null)
+      onError: (err) => {
+        setSpeakingId(null);
+        if (err && err.message) {
+          showError(err.message);
+        }
+      }
     });
   };
 

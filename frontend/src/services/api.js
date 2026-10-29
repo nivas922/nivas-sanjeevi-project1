@@ -16,6 +16,33 @@ const resolveApiBaseUrl = () => {
 const API_BASE_URL = resolveApiBaseUrl();
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+export const resolveBackendUrl = (pathOrUrl) => {
+  if (!pathOrUrl || typeof pathOrUrl !== "string") return "";
+  const trimmed = pathOrUrl.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("data:")
+  ) {
+    return trimmed;
+  }
+
+  const apiBase = resolveApiBaseUrl();
+  if (apiBase.startsWith("http://") || apiBase.startsWith("https://")) {
+    const origin = apiBase.replace(/\/api\/?$/, "");
+    const cleanPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+    return `${origin}${cleanPath}`;
+  }
+
+  if (import.meta.env?.PROD) {
+    const cleanPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+    return `https://nivas-sanjeevi-project1-1.onrender.com${cleanPath}`;
+  }
+
+  return trimmed;
+};
+
 export const getAuthHeaders = () => {
   const headers = {
     "Content-Type": "application/json"
@@ -592,7 +619,11 @@ export const api = {
         headers: getAuthHeaders(),
         body: JSON.stringify({ text, language })
       });
-      return await handleApiResponse(res);
+      const data = await handleApiResponse(res);
+      if (data && data.audioUrl) {
+        data.audioUrl = resolveBackendUrl(data.audioUrl);
+      }
+      return data;
     } catch (err) {
       handleNetworkError(err);
     }

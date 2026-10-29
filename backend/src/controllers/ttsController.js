@@ -26,10 +26,17 @@ export class TtsController {
         language
       });
 
+      // Resolve full audio URL using the active request host and protocol
+      const host = req.get("host");
+      const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+      const fullAudioUrl = host && result.audioUrl ? `${proto}://${host}${result.audioUrl}` : result.audioUrl;
+
       return res.status(200).json({
         success: true,
         status: "success",
-        ...result
+        ...result,
+        audioUrl: fullAudioUrl,
+        relativeAudioUrl: result.audioUrl
       });
     } catch (error) {
       next(error);

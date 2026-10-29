@@ -30,6 +30,7 @@ export const TextToSpeech = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAudioPrepared, setIsAudioPrepared] = useState(false);
   const [playbackError, setPlaybackError] = useState(null);
   const [rate, setRate] = useState(1.0);
   const [selectedLang, setSelectedLang] = useState(initialLang || "en");
@@ -40,12 +41,18 @@ export const TextToSpeech = ({
 
   const speedOptions = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
+  const handleSpeedSelect = (s) => {
+    setRate(s);
+    speechService.setRate(s);
+  };
+
   // Stop playback when parent text changes so next play reads the latest text
   useEffect(() => {
     speechService.stop();
     setIsPlaying(false);
     setIsPaused(false);
     setIsLoading(false);
+    setIsAudioPrepared(false);
     setPlaybackMode(null);
     setPlaybackError(null);
   }, [text]);
@@ -57,6 +64,7 @@ export const TextToSpeech = ({
       setIsPlaying(false);
       setIsPaused(false);
       setIsLoading(false);
+      setIsAudioPrepared(false);
       setPlaybackMode(null);
       setPlaybackError(null);
       setSelectedLang(initialLang);
@@ -112,6 +120,7 @@ export const TextToSpeech = ({
     setIsPlaying(false);
     setIsPaused(false);
     setIsLoading(false);
+    setIsAudioPrepared(false);
     setPlaybackMode(null);
     setPlaybackError(null);
     setSelectedLang(langCode);
@@ -155,6 +164,7 @@ export const TextToSpeech = ({
           setIsLoading(false);
           setIsPlaying(true);
           setIsPaused(false);
+          setIsAudioPrepared(true);
           setPlaybackMode(info?.mode || "browser");
           setPlaybackVoiceLabel(info?.voice || "");
         },
@@ -172,12 +182,14 @@ export const TextToSpeech = ({
           setIsLoading(false);
           setIsPlaying(false);
           setIsPaused(false);
+          setIsAudioPrepared(true);
           setPlaybackMode(null);
         },
         onError: (err) => {
           setIsLoading(false);
           setIsPlaying(false);
           setIsPaused(false);
+          setIsAudioPrepared(false);
           setPlaybackMode(null);
           const errorMsg =
             err?.code === "VOICE_UNAVAILABLE"
@@ -191,6 +203,7 @@ export const TextToSpeech = ({
       setIsLoading(false);
       setIsPlaying(false);
       setIsPaused(false);
+      setIsAudioPrepared(false);
       setPlaybackError(err?.message || "Failed to start audio playback.");
     }
   };
@@ -214,9 +227,11 @@ export const TextToSpeech = ({
     setIsPlaying(false);
     setIsPaused(false);
     setIsLoading(false);
+    setIsAudioPrepared(false);
     setPlaybackMode(null);
     setPlaybackError(null);
     setRate(1.0);
+    speechService.setRate(1.0);
   };
 
   // Compact inline pill variant (e.g. within summary modals)
@@ -326,8 +341,10 @@ export const TextToSpeech = ({
               <span className="flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200/60">
                 {hasBrowserVoice ? (
                   <span>⏹ Ready ({bcp47})</span>
+                ) : isAudioPrepared ? (
+                  <span className="text-emerald-700 font-semibold">✅ Cloud Audio Ready</span>
                 ) : (
-                  <span className="text-emerald-700 font-semibold">☁️ Cloud Audio Ready</span>
+                  <span className="text-slate-600 font-medium">☁️ Cloud TTS Available</span>
                 )}
               </span>
             )}
@@ -402,7 +419,7 @@ export const TextToSpeech = ({
               <button
                 key={s}
                 type="button"
-                onClick={() => setRate(s)}
+                onClick={() => handleSpeedSelect(s)}
                 className={`px-2 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
                   rate === s
                     ? "bg-brand-600 text-white shadow-soft-xs"
@@ -525,8 +542,10 @@ export const TextToSpeech = ({
             <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
               {hasBrowserVoice ? (
                 <span>⏹ Ready to Play ({bcp47})</span>
+              ) : isAudioPrepared ? (
+                <span className="text-emerald-700 font-semibold">✅ Cloud Audio Ready ({bcp47})</span>
               ) : (
-                <span>☁️ Cloud Audio Ready ({bcp47})</span>
+                <span className="text-slate-600 font-medium">☁️ Cloud TTS Available ({bcp47})</span>
               )}
             </span>
           )}
@@ -655,7 +674,7 @@ export const TextToSpeech = ({
                 <button
                   key={s}
                   type="button"
-                  onClick={() => setRate(s)}
+                  onClick={() => handleSpeedSelect(s)}
                   className={`px-2 py-0.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                     rate === s
                       ? "bg-brand-600 text-white shadow-soft-xs"
